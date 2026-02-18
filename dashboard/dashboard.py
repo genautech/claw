@@ -137,7 +137,7 @@ def extract_trades_from_logs(logs):
 def calculate_exposure(positions):
     """Calculate current exposure metrics."""
     if not positions:
-        return {'total': 0, 'per_market': {}, 'alerts': []}
+        return {'total': 0, 'per_market': {}, 'positions_count': 0, 'alerts': []}
 
     total_capital = sum(p.get('size', 0) for p in positions)
     per_market = {}
