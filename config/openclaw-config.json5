@@ -1,0 +1,74 @@
+// ============================================================
+// OpenClaw Hardened Configuration - gateway.mode: local
+// ============================================================
+// This is a TEMPLATE. The live config is at ~/.openclaw/openclaw.json
+// Copy and customize:
+//   cp config/openclaw-config.json5 ~/.openclaw/openclaw.json
+//
+// Docs: https://docs.openclaw.ai/gateway/security
+// ============================================================
+{
+  "gateway": {
+    "mode": "local",
+    "bind": "loopback",
+    "port": 18789,
+    "auth": {
+      "mode": "token",
+      "token": "REPLACE_WITH_LONG_RANDOM_TOKEN"
+    }
+  },
+  "discovery": {
+    "mdns": { "mode": "minimal" }
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "deepseek/deepseek-chat"
+      }
+    }
+  },
+  "tools": {
+    "profile": "messaging",
+    "deny": [
+      "group:automation",
+      "group:runtime",
+      "group:fs",
+      "sessions_spawn",
+      "sessions_send",
+      "gateway",
+      "cron"
+    ],
+    "elevated": { "enabled": false },
+    "exec": { "security": "deny", "ask": "always" },
+    "fs": { "workspaceOnly": true }
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto"
+  },
+  "channels": {
+    "whatsapp": {
+      "dmPolicy": "pairing",
+      "groupPolicy": "allowlist",
+      "groups": { "*": { "requireMention": true } },
+      "debounceMs": 0,
+      "mediaMaxMb": 50
+    },
+    "telegram": {
+      "dmPolicy": "pairing",
+      "groupPolicy": "allowlist",
+      "groups": { "*": { "requireMention": true } },
+      "streamMode": "partial"
+    },
+    "discord": {
+      "dmPolicy": "pairing",
+      "groupPolicy": "allowlist"
+    }
+  },
+  "logging": {
+    "redactSensitive": "tools"
+  }
+}
