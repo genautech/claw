@@ -63,11 +63,26 @@ DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 
 # Global clients
 redis_client: Optional[aioredis.Redis] = None
-try:
-    redis_client = aioredis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
-    logger.info(f"Connected to Redis at {REDIS_URL}")
-except Exception as e:
-    logger.warning(f"Could not connect to Redis: {e}. Running without cache.")
+
+@app.on_event("startup")
+async def startup_event():
+    global redis_client
+    try:
+        # Use create_redis_pool for aioredis 1.x compatibility
+        redis_client = await aioredis.create_redis_pool(
+            REDIS_URL, encoding="utf-8"
+        )
+        logger.info(f"Connected to Redis at {REDIS_URL}")
+    except Exception as e:
+        logger.warning(f"Could not connect to Redis: {e}. Running without cache.")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global redis_client
+    if redis_client:
+        redis_client.close()
+        await redis_client.wait_closed()
+        logger.info("Redis connection closed.")
 
 gamma_client = GammaClient(redis_client=redis_client)
 clob_client: Optional[ClobClientWrapper] = None
