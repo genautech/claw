@@ -1,0 +1,17 @@
+{
+  "health": {
+    "executorUrl": "http://127.0.0.1:8789/health",
+    "maxGatewayDownMinutes": 5
+  },
+  "trade": {
+    "recommendationStaleMinutes": 180,
+    "maxConsecutiveFailures": 3
+  },
+  "risk": {
+    "maxOrderUsd": 100,
+    "maxLossPerTradePct": 30
+  },
+  "resolution": {
+    "staleResolutionHours": 24
+  }
+}

@@ -13,6 +13,7 @@ Before doing anything else:
 2. Read `USER.md` — this is who you're helping
 3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
 4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
+5. **If working on Polymarket**: Read `POLYMARKET_IMPROVEMENTS.md` for improvement tasks
 
 Don't ask permission. Just do it.
 
@@ -48,12 +49,31 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 - `trash` > `rm` (recoverable beats gone forever)
 - When in doubt, ask.
 
+## Rate Limits
+
+If you encounter API rate limit errors (429):
+1. **Stop immediately** - don't continue making requests
+2. **Wait 60 seconds** before retrying
+3. **Use fallback model** if available (Gemini Flash is cheaper and less rate-limited)
+4. **Document the error** in `memory/YYYY-MM-DD.md`
+5. **Reduce frequency** of operations that caused the limit
+6. **Read `RATE_LIMIT_FIX.md`** for detailed solutions
+
+**Prevention:**
+- Add delays in loops (`await sleep(1000)`)
+- Don't make parallel requests without control
+- Use cheaper models for non-critical tasks
+- Close unused sessions
+
 ## External vs Internal
 
 **Safe to do freely:**
 - Read files, explore, organize, learn
 - Search the web, check calendars
 - Work within this workspace
+- **Improve skills and documentation** - Update SKILL.md files, enhance strategies, add examples
+- **Self-improvement** - Make the system better based on what you learn
+- **Polymarket training** - Proactively improve trading skills, strategies, and documentation
 
 **Ask first:**
 - Sending emails, tweets, public posts

@@ -1,74 +1,168 @@
 // ============================================================
-// OpenClaw Hardened Configuration - gateway.mode: local
+// OpenClaw Configuration - ClawdBot
 // ============================================================
-// This is a TEMPLATE. The live config is at ~/.openclaw/openclaw.json
-// Copy and customize:
-//   cp config/openclaw-config.json5 ~/.openclaw/openclaw.json
+// This mirrors the live config at ~/.openclaw/openclaw.json
+// Secrets (tokens, API keys) use placeholders — fill in or
+// use environment variables via scripts/setup.sh
 //
 // Docs: https://docs.openclaw.ai/gateway/security
 // ============================================================
 {
-  "gateway": {
-    "mode": "local",
-    "bind": "loopback",
-    "port": 18789,
-    "auth": {
-      "mode": "token",
-      "token": "REPLACE_WITH_LONG_RANDOM_TOKEN"
+  "logging": {
+    "redactSensitive": "tools"
+  },
+  "auth": {
+    "profiles": {
+      "openai-codex:default": {
+        "provider": "openai-codex",
+        "mode": "oauth"
+      }
     }
-  },
-  "discovery": {
-    "mdns": { "mode": "minimal" }
-  },
-  "session": {
-    "dmScope": "per-channel-peer"
+    // API key providers (anthropic, openai, google, xai, openrouter)
+    // use env vars from ~/.openclaw/.env automatically
   },
   "agents": {
     "defaults": {
       "model": {
-        "primary": "deepseek/deepseek-chat"
+        // === FREE MODEL FOR TESTING (2026-02-18) ===
+        // Primary: GPT-4o via OAuth — FREE with ChatGPT Plus subscription
+        // Fallback: Grok-3 (pago) — se quiser usar modelos pagos
+        "primary": "openai/gpt-4o",
+        "fallbacks": [
+          "google/gemini-2.5-flash",  // Cheaper fallback to reduce rate limit issues
+          "xai/grok-3"
+        ]
+      },
+      "models": {
+        // === MODEL CATALOG + ALIASES ===
+        // Users can switch with /model <alias> in chat
+        //
+        // Tier 1: Paid Models (primary routing)
+        "xai/grok-3": { "alias": "grok" },                      // PRIMARY — SuperGrok (pago)
+        "anthropic/claude-sonnet-4-5": { "alias": "sonnet" },   // Disponível manualmente (sem créditos)
+        "openai/gpt-4o": { "alias": "gpt4o" }                    // Fallback — FREE via OAuth
+      },
+      "workspace": "/Users/genautech/clawd",
+      "compaction": {
+        "mode": "default",
+        "memoryFlush": {
+          "enabled": true
+        }
+      },
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
       }
     }
   },
   "tools": {
-    "profile": "messaging",
-    "deny": [
-      "group:automation",
-      "group:runtime",
-      "group:fs",
-      "sessions_spawn",
-      "sessions_send",
-      "gateway",
-      "cron"
-    ],
-    "elevated": { "enabled": false },
-    "exec": { "security": "deny", "ask": "always" },
+    "profile": "coding",
+    "elevated": { "enabled": true },
+    "exec": { "security": "full", "ask": "on-miss" },
     "fs": { "workspaceOnly": true }
   },
   "commands": {
     "native": "auto",
     "nativeSkills": "auto"
   },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
   "channels": {
     "whatsapp": {
       "dmPolicy": "pairing",
       "groupPolicy": "allowlist",
-      "groups": { "*": { "requireMention": true } },
+      "groups": {
+        "*": {
+          "requireMention": false
+        }
+      },
+      "ackReaction": {
+        "direct": false,
+        "group": "never"
+      },
       "debounceMs": 0,
       "mediaMaxMb": 50
     },
     "telegram": {
+      "enabled": true,
       "dmPolicy": "pairing",
+      "botToken": "8563095768:AAGv7_P-9s42UXqwQTGMxFXuCfIRBNz9Ne4",
       "groupPolicy": "allowlist",
-      "groups": { "*": { "requireMention": true } },
+      "groups": {
+        "*": {
+          "requireMention": true
+        }
+      },
       "streamMode": "partial"
     },
     "discord": {
-      "dmPolicy": "pairing",
-      "groupPolicy": "allowlist"
+      "enabled": true,
+      "groupPolicy": "allowlist",
+      "dmPolicy": "pairing"
+      // "botToken": "YOUR_DISCORD_BOT_TOKEN" — configure via openclaw config set channels.discord.botToken
     }
   },
-  "logging": {
-    "redactSensitive": "tools"
+  "discovery": {
+    "mdns": { "mode": "minimal" }
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "auto",
+    "auth": {
+      "mode": "token",
+      "token": "87969d5b456a17e15c44341a10f3b1020c2cc7db3ac3465c02a32de473777a09"
+    },
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    }
+  },
+  "skills": {
+    "install": {
+      "nodeManager": "npm"
+    },
+    "entries": {
+      "polyclaw": {
+        "enabled": true
+      },
+      "goplaces": {
+        "apiKey": "AIzaSyAQfusjj0XfhGKLI8UIogE-vYt71XH-V54"
+      },
+      "nano-banana-pro": {
+        "apiKey": "AIzaSyBlT2-cuumV5wfzBgpxwFIQlrxK6bZ6RH0"
+      },
+      "polywhale": {
+        "enabled": true
+      },
+      "latencyninja": {
+        "enabled": true
+      },
+      "configdash": {
+        "enabled": true
+      },
+      "polymarket-exec": {
+        "enabled": true,
+        "env": {
+          "DRY_RUN": "true",
+          "MAX_TRADE_USD": "100",
+          "MAX_SLIPPAGE_BPS": "500",
+          "EXEC_API_TOKEN": "a6a7fc0a6c24ba376f2614c327f60f79007d2684a8b533d2441330f8abfb69b0",
+          "POLYMARKET_PK": "",
+          "POLYMARKET_ADDRESS": "",
+          "POLYMARKET_API_KEY": "019c6f85-bc2f-7269-a6f8-77fa60e1d6aa",
+          "POLYMARKET_API_SECRET": "0b74AWQRZZzEWy-3Wf9Z7UycmSI3anwhUQ8bpFuDEE4=",
+          "POLYMARKET_API_PASSPHRASE": "40709d8ca55ecdacaed9514f32ad98921c3d70b080cc99a7546d80aa20256661"
+        }
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "telegram": { "enabled": true },
+      "whatsapp": { "enabled": true },
+      "discord": { "enabled": true }
+    }
   }
 }

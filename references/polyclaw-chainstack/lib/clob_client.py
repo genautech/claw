@@ -12,14 +12,18 @@ import httpx
 
 # Max retries for Cloudflare blocks (with rotating proxy, each retry gets new IP)
 CLOB_MAX_RETRIES = int(os.environ.get("CLOB_MAX_RETRIES", "5"))
+CLOB_HTTP_TIMEOUT = float(os.environ.get("CLOB_HTTP_TIMEOUT", "30"))
 
 
 class ClobClientWrapper:
     """Wrapper around py-clob-client for trading."""
 
-    def __init__(self, private_key: str, address: str):
+    def __init__(self, private_key: str, address: str, api_key: Optional[str] = None, api_secret: Optional[str] = None, api_passphrase: Optional[str] = None):
         self.private_key = private_key
         self.address = address
+        self.api_key = api_key or os.environ.get("POLYMARKET_API_KEY")
+        self.api_secret = api_secret or os.environ.get("POLYMARKET_API_SECRET")
+        self.api_passphrase = api_passphrase or os.environ.get("POLYMARKET_API_PASSPHRASE")
         self._client = None
         self._creds = None
 
@@ -37,7 +41,7 @@ class ClobClientWrapper:
                     pass
             # Create fresh client (gets new IP with rotating proxies)
             clob_helpers._http_client = httpx.Client(
-                http2=True, proxy=proxy, timeout=30.0
+                http2=True, proxy=proxy, timeout=CLOB_HTTP_TIMEOUT
             )
 
     def _init_client(self):
@@ -54,7 +58,7 @@ class ClobClientWrapper:
         proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
         if proxy:
             clob_helpers._http_client = httpx.Client(
-                http2=True, proxy=proxy, timeout=30.0
+                http2=True, proxy=proxy, timeout=CLOB_HTTP_TIMEOUT
             )
 
         # Initialize client
@@ -67,8 +71,36 @@ class ClobClientWrapper:
         )
 
         # Set up API credentials
-        self._creds = self._client.create_or_derive_api_creds()
-        self._client.set_api_creds(self._creds)
+        if self.api_key and self.api_secret and self.api_passphrase:
+            # Use provided API credentials
+            try:
+                from py_clob_client.utilities.helpers import ApiCreds
+                self._creds = ApiCreds(
+                    api_key=self.api_key,
+                    api_secret=self.api_secret,
+                    api_passphrase=self.api_passphrase
+                )
+                self._client.set_api_creds(self._creds)
+            except (ImportError, AttributeError):
+                # Fallback: try to create creds object manually
+                try:
+                    # Create a dict-like structure that py-clob-client expects
+                    self._creds = {
+                        "apiKey": self.api_key,
+                        "apiSecret": self.api_secret,
+                        "apiPassphrase": self.api_passphrase
+                    }
+                    self._client.set_api_creds(self._creds)
+                except Exception:
+                    # If manual creation fails, log warning and use auto-derive
+                    import warnings
+                    warnings.warn("Could not set provided API credentials, falling back to auto-derive")
+                    self._creds = self._client.create_or_derive_api_creds()
+                    self._client.set_api_creds(self._creds)
+        else:
+            # Fallback to auto-create/derive if credentials not provided
+            self._creds = self._client.create_or_derive_api_creds()
+            self._client.set_api_creds(self._creds)
 
     @property
     def client(self):
@@ -167,24 +199,36 @@ class ClobClientWrapper:
         Returns:
             Tuple of (order_id, error_message)
         """
-        try:
-            from py_clob_client.clob_types import OrderArgs, OrderType
-            from py_clob_client.order_builder.constants import BUY
+        from py_clob_client.clob_types import OrderArgs, OrderType
+        from py_clob_client.order_builder.constants import BUY
 
-            order = self.client.create_order(
-                OrderArgs(
-                    token_id=token_id,
-                    price=round(price, 2),
-                    size=amount,
-                    side=BUY,
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+        last_error = None
+
+        for attempt in range(CLOB_MAX_RETRIES):
+            try:
+                if attempt > 0 and proxy:
+                    self._refresh_http_client()
+                    time.sleep(1)
+
+                order = self.client.create_order(
+                    OrderArgs(
+                        token_id=token_id,
+                        price=round(price, 2),
+                        size=amount,
+                        side=BUY,
+                    )
                 )
-            )
-            result = self.client.post_order(order, OrderType.GTC)
-            order_id = result.get("orderID", str(result)[:40])
-            return order_id, None
+                result = self.client.post_order(order, OrderType.GTC)
+                order_id = result.get("orderID", str(result)[:40])
+                return order_id, None
+            except Exception as e:
+                last_error = str(e)
+                if self._is_cloudflare_block(last_error) and proxy:
+                    continue
+                break
 
-        except Exception as e:
-            return None, str(e)
+        return None, last_error
 
     def get_order_book(self, token_id: str) -> dict:
         """Get order book for a token."""

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import httpx
+import aioredis
 
 
 GAMMA_API_BASE = "https://gamma-api.polymarket.com"
@@ -46,8 +47,9 @@ class MarketGroup:
 class GammaClient:
     """HTTP client for Polymarket Gamma API."""
 
-    def __init__(self, timeout: float = 30.0):
+    def __init__(self, timeout: float = 30.0, redis_client: Optional[aioredis.Redis] = None):
         self.timeout = timeout
+        self.redis = redis_client
 
     async def get_trending_markets(self, limit: int = 20) -> list[Market]:
         """Get trending markets by volume."""
@@ -100,10 +102,19 @@ class GammaClient:
 
     async def get_market(self, market_id: str) -> Market:
         """Get market by ID."""
+        cache_key = f"polymarket:market:{market_id}"
+        if self.redis:
+            cached_data = await self.redis.get(cache_key)
+            if cached_data:
+                return self._parse_market(json.loads(cached_data))
+
         async with httpx.AsyncClient(timeout=self.timeout) as http:
             resp = await http.get(f"{GAMMA_API_BASE}/markets/{market_id}")
             resp.raise_for_status()
-            return self._parse_market(resp.json())
+            market_data = resp.json()
+            if self.redis:
+                await self.redis.setex(cache_key, 30, json.dumps(market_data)) # Cache for 30 seconds
+            return self._parse_market(market_data)
 
     async def get_market_by_slug(self, slug: str) -> Market:
         """Get market by slug."""

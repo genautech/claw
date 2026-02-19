@@ -1,0 +1,17 @@
+{
+  "id": "rec_20260218_001",
+  "timestamp": "2026-02-18T12:00:00Z",
+  "market_id": "0x1234567890abcdef1234567890abcdef12345678",
+  "decision": "BUY_YES",
+  "targetPrice": 0.62,
+  "edge": 0.12,
+  "confidence": "HIGH",
+  "risk_pct": 0.05,
+  "reason": "Arbitrage opportunity: 12% edge vs Kalshi pricing",
+  "exit_rules": {
+    "stop_loss": -0.30,
+    "take_profit": 0.40,
+    "time_limit": "7d"
+  },
+  "data_sources": ["gamma_api", "kalshi"]
+}

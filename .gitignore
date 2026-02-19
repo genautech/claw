@@ -1,3 +1,8 @@
+
+# Agent-specific memory (do not commit to public repos)
+MEMORY.md
+memory/
+
 # Secrets - NEVER commit
 .env
 .env.local

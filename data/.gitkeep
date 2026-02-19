@@ -1,0 +1,3 @@
+# This directory stores:
+# - recommendations.jsonl: PolyWhale trading recommendations
+# - executions.jsonl: Trade execution history

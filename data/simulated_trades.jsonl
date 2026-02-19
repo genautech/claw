@@ -1,0 +1,21 @@
+[
+  {
+    "id": "sim_trade_20260218_001",
+    "timestamp": "2026-02-18T19:20:00Z",
+    "market_id": "hypothetical_btc_70k_mar26",
+    "description": "BTC will close above $70,000 by March 31, 2026",
+    "decision": "BUY_YES",
+    "targetPrice": 0.65,
+    "edge": 0.10,
+    "confidence": "MEDIUM",
+    "risk_pct": 0.03,
+    "reason": "General bullish sentiment and historical performance leading into Q2.",
+    "exit_rules": {
+      "stop_loss": -0.20,
+      "take_profit": 0.30,
+      "time_limit": "2026-03-31"
+    },
+    "data_sources": ["subagent_proposal"],
+    "status": "PROPOSED"
+  }
+]

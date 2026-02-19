@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>OpenClaw Chat Test</title>
+  <style>
+    body { font-family: monospace; padding: 20px; }
+    .log { margin: 5px 0; padding: 5px; background: #f0f0f0; }
+    .error { background: #ffcccc; }
+    .success { background: #ccffcc; }
+    button { padding: 10px; margin: 5px; }
+  </style>
+</head>
+<body>
+  <h1>OpenClaw Chat Debug Test</h1>
+  <button onclick="testHealth()">Test Health</button>
+  <button onclick="testChatPage()">Test Chat Page</button>
+  <button onclick="testWebSocket()">Test WebSocket</button>
+  <button onclick="testSendMessage()">Test Send Message</button>
+  <div id="logs"></div>
+
+  <script>
+    const GATEWAY_URL = 'http://127.0.0.1:18789';
+    const WS_URL = 'ws://127.0.0.1:18789';
+    const TOKEN = '87969d5b456a17e15c44341a10f3b1020c2cc7db3ac3465c02a32de473777a09';
+    
+    function log(msg, type = 'info') {
+      const div = document.createElement('div');
+      div.className = `log ${type}`;
+      div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      document.getElementById('logs').appendChild(div);
+      console.log(`[${type.toUpperCase()}] ${msg}`);
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:log',message:msg,data:{type:type},timestamp:Date.now(),runId:'test2',hypothesisId:'A'})}).catch((e)=>console.error('Log send failed:',e));
+      // #endregion
+    }
+
+    async function testHealth() {
+      log('Testing health endpoint...', 'info');
+      try {
+        const res = await fetch(`${GATEWAY_URL}/health`);
+        const text = await res.text();
+        log(`Health: ${res.status} - ${text.substring(0, 100)}`, res.ok ? 'success' : 'error');
+      } catch (e) {
+        log(`Health error: ${e.message}`, 'error');
+      }
+    }
+
+    async function testChatPage() {
+      log('Testing chat page load...', 'info');
+      try {
+        const res = await fetch(`${GATEWAY_URL}/chat?session=agent%3Amain%3Amain`);
+        const text = await res.text();
+        log(`Chat page: ${res.status} - Length: ${text.length}`, res.ok ? 'success' : 'error');
+        if (text.includes('error') || text.includes('Error')) {
+          log('Chat page contains error text', 'error');
+        }
+      } catch (e) {
+        log(`Chat page error: ${e.message}`, 'error');
+      }
+    }
+
+    function testWebSocket() {
+      log('Testing WebSocket connection...', 'info');
+      // #region agent log
+      fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:testWebSocket',message:'Starting WebSocket test',data:{wsUrl:`${WS_URL}/ws?token=${TOKEN.substring(0,8)}...`},timestamp:Date.now(),runId:'test1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
+      const ws = new WebSocket(`${WS_URL}/ws?token=${TOKEN}`);
+      let connected = false;
+      
+      ws.onopen = () => {
+        connected = true;
+        log('WebSocket: CONNECTED', 'success');
+        // #region agent log
+        fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:ws.onopen',message:'WebSocket opened successfully',data:{},timestamp:Date.now(),runId:'test1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        ws.close();
+      };
+      
+      ws.onerror = (e) => {
+        log(`WebSocket: ERROR - ${e.message || 'Connection failed'}`, 'error');
+        // #region agent log
+        fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:ws.onerror',message:'WebSocket error',data:{error:e.message||'unknown'},timestamp:Date.now(),runId:'test1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+      };
+      
+      ws.onclose = (e) => {
+        if (!connected) {
+          log(`WebSocket: CLOSED without opening - Code: ${e.code}, Reason: ${e.reason || 'none'}`, 'error');
+          // #region agent log
+          fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:ws.onclose',message:'WebSocket closed without opening',data:{code:e.code,reason:e.reason},timestamp:Date.now(),runId:'test1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+        }
+      };
+      
+      setTimeout(() => {
+        if (!connected && ws.readyState !== WebSocket.OPEN) {
+          log('WebSocket: TIMEOUT - Connection not established after 5s', 'error');
+          ws.close();
+        }
+      }, 5000);
+    }
+
+    async function testSendMessage() {
+      log('Testing message send...', 'info');
+      // #region agent log
+      fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:testSendMessage',message:'Attempting to send test message',data:{session:'agent:main:main'},timestamp:Date.now(),runId:'test1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      
+      try {
+        const res = await fetch(`${GATEWAY_URL}/api/sessions/agent:main:main/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${TOKEN}`
+          },
+          body: JSON.stringify({ content: 'test', role: 'user' })
+        });
+        const text = await res.text();
+        log(`Send message: ${res.status} - ${text.substring(0, 200)}`, res.ok ? 'success' : 'error');
+        // #region agent log
+        fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:testSendMessage',message:'Message send response',data:{status:res.status,ok:res.ok},timestamp:Date.now(),runId:'test1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+      } catch (e) {
+        log(`Send message error: ${e.message}`, 'error');
+        // #region agent log
+        fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:testSendMessage',message:'Message send exception',data:{error:e.message},timestamp:Date.now(),runId:'test1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+      }
+    }
+
+    // Test actual chat interface
+    async function testActualChat() {
+      log('Testing actual chat interface...', 'info');
+      // #region agent log
+      fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:testActualChat',message:'Testing actual chat interface',data:{},timestamp:Date.now(),runId:'test2',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
+      
+      try {
+        // Try to find chat elements
+        const iframe = document.createElement('iframe');
+        iframe.src = `${GATEWAY_URL}/chat?session=agent:main:main`;
+        iframe.style.width = '800px';
+        iframe.style.height = '600px';
+        iframe.style.border = '1px solid #ccc';
+        document.body.appendChild(iframe);
+        
+        iframe.onload = () => {
+          log('Chat iframe loaded', 'success');
+          // #region agent log
+          fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:iframe.onload',message:'Chat iframe loaded successfully',data:{},timestamp:Date.now(),runId:'test2',hypothesisId:'F'})}).catch(()=>{});
+          // #endregion
+          
+          setTimeout(() => {
+            try {
+              const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+              const chatElements = iframeDoc.querySelectorAll('*');
+              log(`Found ${chatElements.length} elements in chat iframe`, 'info');
+              
+              // Check for common chat UI elements
+              const inputs = iframeDoc.querySelectorAll('input, textarea');
+              const buttons = iframeDoc.querySelectorAll('button');
+              log(`Found ${inputs.length} inputs, ${buttons.length} buttons`, 'info');
+              
+              if (inputs.length === 0) {
+                log('WARNING: No input fields found - chat may be stuck', 'error');
+                // #region agent log
+                fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:testActualChat',message:'No input fields found in chat',data:{inputs:inputs.length,buttons:buttons.length},timestamp:Date.now(),runId:'test2',hypothesisId:'F'})}).catch(()=>{});
+                // #endregion
+              }
+            } catch (e) {
+              log(`Cannot access iframe content (CORS): ${e.message}`, 'error');
+              // #region agent log
+              fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:testActualChat',message:'CORS error accessing iframe',data:{error:e.message},timestamp:Date.now(),runId:'test2',hypothesisId:'F'})}).catch(()=>{});
+              // #endregion
+            }
+          }, 2000);
+        };
+        
+        iframe.onerror = (e) => {
+          log(`Chat iframe error: ${e.message || 'Failed to load'}`, 'error');
+          // #region agent log
+          fetch('http://127.0.0.1:7245/ingest/615d88cc-0834-431d-8bfb-dcbd727a7876',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'test-chat.html:iframe.onerror',message:'Chat iframe failed to load',data:{error:e.message||'unknown'},timestamp:Date.now(),runId:'test2',hypothesisId:'F'})}).catch(()=>{});
+          // #endregion
+        };
+      } catch (e) {
+        log(`Error creating chat iframe: ${e.message}`, 'error');
+      }
+    }
+
+    // Auto-run tests on load
+    window.onload = () => {
+      log('Page loaded, running initial tests...', 'info');
+      setTimeout(() => testHealth(), 500);
+      setTimeout(() => testChatPage(), 1000);
+      setTimeout(() => testWebSocket(), 1500);
+      setTimeout(() => testActualChat(), 2000);
+    };
+  </script>
+</body>
+</html>
