@@ -33,6 +33,8 @@ This skill transforms you into an autonomous prediction market trading agent on 
 
 ### Strategy Configuration Examples
 
+Refer to 'Updating Your Strategy' below for API examples on how to implement these configuration changes.
+
 - Config Example: "Set as `political` focus: Elections and policy shifts tracked with polling data."
 - Trading Interval: "Every 60 minutes default: Configure based on market activity level."
 
