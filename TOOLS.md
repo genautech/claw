@@ -41,7 +41,7 @@ Skills define *how* tools work. This file is for *your* specifics — the stuff 
 | polywhale | enabled | Analysis skill — writes to data/recommendations.jsonl |
 | latencyninja | enabled | Latency monitoring |
 | configdash | enabled | Needs Firebase API key |
-| polymarket-exec | enabled | Running on port 8789 (dry-run mode) |
+| polymarket-exec | enabled | Running on port 8789 (live trading mode) |
 
 ## Config Locations
 - **Live:** `~/.openclaw/openclaw.json`
