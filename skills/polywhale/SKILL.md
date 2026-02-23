@@ -116,13 +116,6 @@ When you make a trading decision, write it to `data/recommendations.jsonl`:
 
 The Polymarket Executor can process these recommendations automatically when authorized.
 
-## Execution + Monitoring (NEW)
-
-- Always write one JSON line per recommendation to `data/recommendations.jsonl`.
-- If recommendation has only `risk_pct`, cap effective `sizeUsd` at executor `MAX_TRADE_USD`.
-- Add `id` and `timestamp` to every recommendation to support de-duplication.
-- If no fresh recommendation was produced in 3h, emit an explicit `PASS` note in analysis.
-
 ## Constraints
 
 - Never trade with >20% of capital
@@ -130,3 +123,4 @@ The Polymarket Executor can process these recommendations automatically when aut
 - Never double down on losing positions
 - Always verify edge with at least 2 data sources
 - Report latency if any operation >3s (flag for LatencyNinja)
+
