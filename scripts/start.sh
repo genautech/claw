@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 DASHBOARD_DIR="$PROJECT_DIR/dashboard-web"
 GATEWAY_PORT=18789
-DASHBOARD_PORT=8787
+DASHBOARD_PORT=8888
 
 # Get gateway token
 TOKEN=$(openclaw config get gateway.auth.token 2>/dev/null | grep -v "Doctor" | grep -v "^│" | grep -v "^├" | grep -v "^└" | tr -d ' "' || echo "")

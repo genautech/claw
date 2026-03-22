@@ -1,19 +1,19 @@
 # Como Usar o OpenClaw - Guia Completo
 
-**Última atualização:** 2026-02-18
+**Última atualização:** 2026-02-26
 
 ## 🚀 Iniciar Conversa com o Agente
 
 ### Opção 1: Web Chat (Mais Fácil)
 
-Abra no navegador:
+Abra no navegador (sempre incluir o token na URL!):
 ```
-http://127.0.0.1:18789/chat?session=agent%3Amain%3Amain
+http://127.0.0.1:18789/chat?session=agent%3Amain%3Amain&token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
 ```
 
-Ou simplesmente:
+Ou a UI de controle:
 ```
-http://127.0.0.1:18789/chat
+http://127.0.0.1:18789/#token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
 ```
 
 **Vantagens:**
@@ -129,9 +129,11 @@ Analise o arquivo scripts/polymarket-exec.py e sugira melhorias de performance
 - ✅ **Telegram** - @genaubbt_bot (funcionando)
 - ✅ **WhatsApp** - +554187607512 (linkado)
 - ⚠️ **Discord** - Plugin habilitado, precisa bot token
-- ✅ **Web Chat** - http://127.0.0.1:18789/chat
+- ✅ **Web Chat** - http://127.0.0.1:18789/chat?token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
 
 ## 🛠️ Troubleshooting
+
+> **IMPORTANTE:** Ler `INFRASTRUCTURE.md` para todos os procedimentos detalhados.
 
 ### Gateway não responde
 
@@ -139,6 +141,14 @@ Analise o arquivo scripts/polymarket-exec.py e sugira melhorias de performance
 openclaw gateway restart
 openclaw gateway health
 ```
+
+### "pairing required" no Web Chat
+
+1. Garantir que o token na URL está correto (ver URLs acima)
+2. Verificar tokens: `plutil -p ~/Library/LaunchAgents/ai.openclaw.gateway.plist | grep TOKEN`
+3. Listar devices pendentes: `openclaw devices list`
+4. Aprovar: `openclaw devices approve <REQUEST_ID>`
+5. Se "connect failed": limpar localStorage do browser e repetir
 
 ### Modelo não funciona
 

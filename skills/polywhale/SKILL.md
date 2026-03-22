@@ -78,6 +78,8 @@ For every market analysis, return:
   "edge": 0.12,
   "confidence": "HIGH | MEDIUM | LOW",
   "risk_pct": 0.05,
+  "targetPrice": 0.62,
+  "liquidity_usd": 750000,
   "exit_rules": {
     "stop_loss": -0.30,
     "take_profit": 0.40,

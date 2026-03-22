@@ -6,6 +6,25 @@
 set -euo pipefail
 
 API_URL="http://127.0.0.1:8789"
+
+echo "Loading env from ~/.openclaw/openclaw.json..."
+python3 - <<'PY' > /tmp/clawd-polymarket-env.sh
+import json, sys, shlex, os
+config_path = os.path.expanduser("~/.openclaw/openclaw.json")
+try:
+    with open(config_path, "r") as f:
+        config = json.load(f)
+    env = config.get("skills", {}).get("entries", {}).get("polymarket-exec", {}).get("env", {})
+except Exception:
+    env = {}
+for k, v in env.items():
+    if v is None or v == "":
+        continue
+    print(f"export {k}={shlex.quote(str(v))}")
+PY
+source /tmp/clawd-polymarket-env.sh || true
+rm -f /tmp/clawd-polymarket-env.sh
+
 TOKEN="${EXEC_API_TOKEN:-test-token-change-me}"
 
 echo "🧪 Testando Polymarket Executor..."

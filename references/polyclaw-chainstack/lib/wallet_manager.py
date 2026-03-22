@@ -27,8 +27,8 @@ class WalletManager:
         self._load_from_env()
 
     def _load_from_env(self) -> None:
-        """Load private key from POLYCLAW_PRIVATE_KEY env var."""
-        private_key = os.environ.get("POLYCLAW_PRIVATE_KEY")
+        """Load private key from POLYCLAW_PRIVATE_KEY or POLYMARKET_PK env var."""
+        private_key = os.environ.get("POLYCLAW_PRIVATE_KEY") or os.environ.get("POLYMARKET_PK")
         if private_key:
             if not private_key.startswith("0x"):
                 private_key = "0x" + private_key

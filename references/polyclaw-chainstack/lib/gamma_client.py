@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import httpx
-import aioredis
+import redis.asyncio as aioredis
 
 
 GAMMA_API_BASE = "https://gamma-api.polymarket.com"
@@ -109,11 +109,28 @@ class GammaClient:
                 return self._parse_market(json.loads(cached_data))
 
         async with httpx.AsyncClient(timeout=self.timeout) as http:
-            resp = await http.get(f"{GAMMA_API_BASE}/markets/{market_id}")
-            resp.raise_for_status()
+            if market_id.startswith("0x"):
+                resp = await http.get(f"{GAMMA_API_BASE}/markets", params={"condition_id": market_id})
+            else:
+                resp = await http.get(f"{GAMMA_API_BASE}/markets/{market_id}")
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 422:
+                    raise ValueError(
+                        f"Invalid market ID {market_id!r}: Gamma API returned 422 Unprocessable Entity. "
+                        "Use a valid condition ID (0x + 64 hex chars) or numeric market ID."
+                    ) from e
+                raise
+                
             market_data = resp.json()
+            if isinstance(market_data, list):
+                if not market_data:
+                    raise ValueError(f"Market not found for condition_id {market_id}")
+                market_data = market_data[0]
+                
             if self.redis:
-                await self.redis.setex(cache_key, 30, json.dumps(market_data)) # Cache for 30 seconds
+                await self.redis.setex(cache_key, 30, json.dumps(market_data))  # Cache for 30 seconds
             return self._parse_market(market_data)
 
     async def get_market_by_slug(self, slug: str) -> Market:

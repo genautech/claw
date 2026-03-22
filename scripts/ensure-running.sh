@@ -18,7 +18,7 @@ err()  { echo -e "${RED}[✗]${NC} $1"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-DASHBOARD_PORT=8787
+DASHBOARD_PORT=8888
 
 echo "🔍 Verificando serviços..."
 echo ""

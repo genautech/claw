@@ -296,6 +296,54 @@
       </div>
     </div>
 
+    <!-- PolyWhale Recommendations Panel -->
+    <div class="panel" style="grid-column: 1 / -1;">
+      <div class="panel-header">
+        <div class="panel-title">🐋 PolyWhale Recommendations</div>
+        <button class="refresh-btn" onclick="refreshRecommendations()">Refresh</button>
+      </div>
+      <div class="panel-content" style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+          <thead style="border-bottom: 1px solid var(--border);">
+            <tr>
+              <th style="padding: 8px;">Time</th>
+              <th style="padding: 8px;">Market</th>
+              <th style="padding: 8px;">Decision</th>
+              <th style="padding: 8px;">Confidence</th>
+              <th style="padding: 8px;">Edge</th>
+            </tr>
+          </thead>
+          <tbody id="recommendations-tbody">
+            <tr><td colspan="5" class="empty">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Trade Executions Panel -->
+    <div class="panel" style="grid-column: 1 / -1;">
+      <div class="panel-header">
+        <div class="panel-title">⚡ Trade Executions (Dry-Run & Real)</div>
+        <button class="refresh-btn" onclick="refreshExecutions()">Refresh</button>
+      </div>
+      <div class="panel-content" style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+          <thead style="border-bottom: 1px solid var(--border);">
+            <tr>
+              <th style="padding: 8px;">Time</th>
+              <th style="padding: 8px;">Action</th>
+              <th style="padding: 8px;">Market ID</th>
+              <th style="padding: 8px;">Details</th>
+              <th style="padding: 8px;">Status</th>
+            </tr>
+          </thead>
+          <tbody id="executions-tbody">
+            <tr><td colspan="5" class="empty">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Live Logs Panel -->
     <div class="panel" style="grid-column: 1 / -1;">
       <div class="panel-header">
@@ -641,6 +689,76 @@
       document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
     }
 
+    async function fetchJsonl(url) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return [];
+        const text = await res.text();
+        return text.trim().split('\n').filter(Boolean).map(JSON.parse);
+      } catch (e) {
+        console.error("Failed to fetch JSONL", url, e);
+        return [];
+      }
+    }
+
+    async function refreshRecommendations() {
+      const tbody = document.getElementById('recommendations-tbody');
+      const recs = await fetchJsonl('/data/recommendations.jsonl');
+      if (recs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">No recommendations yet.</td></tr>';
+        return;
+      }
+      
+      let html = '';
+      for (const rec of recs.slice(-10).reverse()) {
+        const time = new Date(rec.timestamp).toLocaleTimeString();
+        let decStyle = '';
+        if (rec.decision.includes('YES')) decStyle = 'color: var(--success);';
+        if (rec.decision.includes('NO')) decStyle = 'color: var(--error);';
+        
+        let edge = rec.edge ? (rec.edge * 100).toFixed(1) + '%' : '-';
+        html += `
+          <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <td style="padding: 8px; color: var(--text-dim);">${time}</td>
+            <td style="padding: 8px;" title="${rec.description || ''}">${(rec.description || rec.market_id || '').substring(0,40)}...</td>
+            <td style="padding: 8px; font-weight: bold; ${decStyle}">${rec.decision}</td>
+            <td style="padding: 8px;">${rec.confidence || '-'}</td>
+            <td style="padding: 8px; color: var(--accent);">${edge}</td>
+          </tr>
+        `;
+      }
+      tbody.innerHTML = html;
+    }
+
+    async function refreshExecutions() {
+      const tbody = document.getElementById('executions-tbody');
+      const execs = await fetchJsonl('/data/executions.jsonl');
+      if (execs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">No executions yet.</td></tr>';
+        return;
+      }
+      
+      let html = '';
+      for (const exec of execs.slice(-10).reverse()) {
+        const time = new Date(exec.timestamp).toLocaleTimeString();
+        const action = exec.action;
+        const market = exec.details ? exec.details.marketId : 'N/A';
+        const side = exec.details ? `${exec.details.side.toUpperCase()} ${exec.details.outcomeId}` : '';
+        const status = exec.success ? '<span class="value success">Success</span>' : `<span class="value error" title="${exec.error}">Failed</span>`;
+        
+        html += `
+          <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <td style="padding: 8px; color: var(--text-dim);">${time}</td>
+            <td style="padding: 8px;">${action}</td>
+            <td style="padding: 8px; font-family: monospace; font-size: 11px;">${String(market).substring(0,10)}...</td>
+            <td style="padding: 8px;">${side}</td>
+            <td style="padding: 8px;">${status}</td>
+          </tr>
+        `;
+      }
+      tbody.innerHTML = html;
+    }
+
     // Canvas functionality (from original canvas/index.html)
     function initCanvas() {
       const logEl = document.getElementById('canvas-log');
@@ -691,6 +809,8 @@
       refreshSkills();
       refreshSessions();
       refreshConfig();
+      refreshRecommendations();
+      refreshExecutions();
       initCanvas();
       
       // Auto-refresh every 30 seconds
@@ -700,6 +820,8 @@
         refreshAgentInfo();
         refreshChannels();
         refreshSessions();
+        refreshRecommendations();
+        refreshExecutions();
       }, 60000);  // 60 seconds to reduce API calls
     }
   </script>

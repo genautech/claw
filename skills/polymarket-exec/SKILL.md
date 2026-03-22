@@ -148,6 +148,14 @@ Install cron automation:
 bash scripts/install-polymarket-hooks-cron.sh
 ```
 
+## Operational Checklist
+
+- **Health endpoint**: `GET http://127.0.0.1:8789/health` (no auth)
+  - Expect `{ "status": "ok", "mode": "DRY_RUN"|"LIVE" }`
+- **If health fails**:
+  - Ensure server is running: `python scripts/polymarket-exec.py --serve`
+  - Confirm port 8789 is free and bound to 127.0.0.1
+
 ## Safety Rules
 
 - Never exceed `MAX_TRADE_USD` per order

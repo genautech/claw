@@ -1,8 +1,8 @@
 """
 PolyAgents Dashboard - Trade & Agent Monitoring
 ================================================
-Run: streamlit run app.py --server.port 8787
-URL: http://localhost:8787
+Run: streamlit run app.py --server.port 8888
+URL: http://localhost:8888
 
 Reads from:
 - data/simulated_trades.jsonl  (PolyClaw simulated trades)
@@ -69,7 +69,7 @@ st.markdown("""
 
 # --- Data Loaders ---
 def load_jsonl(filepath):
-    """Load JSONL or JSON array file."""
+    """Load JSONL or JSON array file (handles mixed formats)."""
     if not filepath.exists():
         return []
     try:
@@ -79,16 +79,24 @@ def load_jsonl(filepath):
                 return []
             # Try JSON array first
             if content.startswith('['):
-                return json.loads(content)
-            # Then JSONL (one JSON object per line)
+                try:
+                    items = json.loads(content)
+                    if isinstance(items, list):
+                        return items
+                except json.JSONDecodeError:
+                    pass  # Fall through to JSONL parsing
+            # JSONL: one JSON object per line (skip non-JSON lines like '[', ']')
             results = []
             for line in content.split('\n'):
-                line = line.strip()
-                if line:
-                    try:
-                        results.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
+                line = line.strip().rstrip(',')
+                if not line or line in ('[', ']'):
+                    continue
+                try:
+                    obj = json.loads(line)
+                    if isinstance(obj, dict):
+                        results.append(obj)
+                except json.JSONDecodeError:
+                    continue
             return results
     except Exception:
         return []
@@ -129,6 +137,9 @@ def parse_exec_log(lines):
 simulated_trades = load_jsonl(DATA_DIR / "simulated_trades.jsonl")
 executions = load_jsonl(DATA_DIR / "executions.jsonl")
 recommendations = load_jsonl(DATA_DIR / "recommendations.jsonl")
+ninja_trades_raw = load_jsonl(DATA_DIR / "ninja_trades.jsonl")
+ninja_spreads = [t for t in ninja_trades_raw if t.get('type') == 'spread_capture']
+ninja_summaries = [t for t in ninja_trades_raw if t.get('type') == 'session_summary']
 exec_log_lines = load_log_file(LOGS_DIR / "polymarket-exec.log")
 exec_log_parsed = parse_exec_log(exec_log_lines)
 
@@ -138,11 +149,13 @@ with st.sidebar:
     st.divider()
 
     st.markdown("**Agentes Ativos**")
+    ninja_pnl = ninja_summaries[-1].get('simulated_pnl', 0) if ninja_summaries else 0
     agents_info = {
         "PolyClaw": {"icon": "🐾", "status": "Paper Trading", "color": "🟢", "detail": f"{len(simulated_trades)} trades simulados"},
         "PolyWhale": {"icon": "🐋", "status": "Scanning", "color": "🟡", "detail": f"{len(recommendations)} recomendações"},
         "Executor": {"icon": "⚡", "status": "Dry Run (8789)", "color": "🟢", "detail": f"{len(executions)} execuções"},
-        "LatencyNinja": {"icon": "🥷", "status": "Monitorando", "color": "🟢", "detail": "Redis cache ativo"},
+        "ArbitrageNinja": {"icon": "🥷", "status": "HFT Bot", "color": "🟢" if ninja_spreads else "🟡", "detail": f"{len(ninja_spreads)} spreads | PnL: ${ninja_pnl:.2f}"},
+        "LatencyNinja": {"icon": "⏱️", "status": "Monitorando", "color": "🟢", "detail": "Redis cache ativo"},
     }
     for name, info in agents_info.items():
         st.markdown(f"{info['color']} **{info['icon']} {name}** — {info['status']}")
@@ -166,12 +179,13 @@ st.title("📊 PolyAgents Dashboard")
 st.caption(f"Atualizado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} BRT | Workspace: `{BASE_DIR}`")
 
 # --- Top Metrics Row ---
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 
 successful_execs = [e for e in executions if e.get('success')]
 failed_execs = [e for e in executions if not e.get('success')]
-dry_runs = [e for e in executions if e.get('action') == 'order_dry_run']
+dry_runs = [e for e in executions if 'dry-run' in str(e.get('action', '')).lower()]
 total_volume = sum(e.get('details', {}).get('sizeUsd', 0) for e in executions)
+ninja_total_pnl = ninja_summaries[-1].get('simulated_pnl', 0) if ninja_summaries else 0
 
 with col1:
     st.metric("🎯 Trades Simulados", len(simulated_trades))
@@ -184,6 +198,8 @@ with col4:
     st.metric("💰 Volume Total", f"${total_volume:.0f}")
 with col5:
     st.metric("🧪 Dry Runs OK", len(dry_runs))
+with col6:
+    st.metric("🥷 Ninja PnL", f"${ninja_total_pnl:.2f}", delta=f"{len(ninja_spreads)} spreads")
 
 # --- Risk Check ---
 if failed_execs:
@@ -196,8 +212,9 @@ else:
 st.divider()
 
 # --- Main Content: Tabs ---
-tab_trades, tab_exec, tab_recs, tab_logs, tab_agents = st.tabs([
+tab_trades, tab_ninja, tab_exec, tab_recs, tab_logs, tab_agents = st.tabs([
     "🎯 Trades Simulados",
+    "🥷 Ninja HFT",
     "⚡ Execuções",
     "🐋 Recomendações",
     "📋 Logs",
@@ -255,7 +272,74 @@ with tab_trades:
     else:
         st.info("🎯 Nenhum trade simulado ainda. O PolyClaw vai registrar aqui quando analisar mercados.")
 
-# --- Tab 2: Executions ---
+# --- Tab 2: Ninja HFT ---
+with tab_ninja:
+    st.subheader("🥷 ArbitrageNinja — High-Frequency Trading Bot")
+
+    if ninja_summaries:
+        # Latest session metrics
+        last = ninja_summaries[-1]
+        ncol1, ncol2, ncol3, ncol4, ncol5 = st.columns(5)
+        with ncol1:
+            st.metric("⏱️ Duração", f"{last.get('duration_s', 0):.0f}s")
+        with ncol2:
+            st.metric("📊 Ticks", last.get('ticks', 0))
+        with ncol3:
+            st.metric("🤑 Oportunidades", last.get('opportunities', 0))
+        with ncol4:
+            st.metric("💰 PnL Simulado", f"${last.get('simulated_pnl', 0):.2f}")
+        with ncol5:
+            st.metric("📈 Maior Spread", f"${last.get('max_spread', 0):.4f}")
+
+        st.caption(f"Último mercado: **{last.get('market', 'N/A')}** | Spread médio: ${last.get('avg_spread', 0):.4f}")
+        st.markdown("---")
+
+    if ninja_spreads:
+        st.markdown("#### 🤑 Spreads Capturados")
+        spread_data = []
+        for s in ninja_spreads:
+            spread_data.append({
+                'Hora': s.get('timestamp', '?')[:19],
+                'Mercado': str(s.get('market', '?'))[:40],
+                'Bid': f"${s.get('best_bid', 0):.4f}",
+                'Ask': f"${s.get('best_ask', 0):.4f}",
+                'Spread': f"${s.get('spread', 0):.4f}",
+                'Profit': f"${s.get('profit', 0):.4f}",
+                'PnL Acum.': f"${s.get('cumulative_pnl', 0):.4f}",
+                'Tick': s.get('tick', 0),
+            })
+        st.dataframe(pd.DataFrame(spread_data), use_container_width=True, hide_index=True)
+
+        # PnL chart
+        if len(ninja_spreads) > 1:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=list(range(1, len(ninja_spreads) + 1)),
+                y=[s.get('cumulative_pnl', 0) for s in ninja_spreads],
+                mode='lines+markers',
+                line=dict(color='#00e676', width=2),
+                marker=dict(size=6),
+                name='PnL Acumulado'
+            ))
+            fig.update_layout(
+                title="PnL Acumulado por Trade (Simulado)",
+                xaxis_title="Trade #",
+                yaxis_title="PnL ($)",
+                height=300,
+                template="plotly_dark",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    elif not ninja_summaries:
+        st.info("🥷 Nenhum dado do Ninja ainda. Execute: `python3 scripts/agent_ninja_arbitrage.py --market auto --duration 30`")
+
+    # Session history
+    if len(ninja_summaries) > 0:
+        with st.expander(f"📋 Histórico de Sessões ({len(ninja_summaries)})"):
+            for i, sess in enumerate(reversed(ninja_summaries)):
+                st.markdown(f"**Sessão {len(ninja_summaries) - i}** — {sess.get('market', '?')[:50]}")
+                st.caption(f"Duração: {sess.get('duration_s', 0)}s | Ticks: {sess.get('ticks', 0)} | Opps: {sess.get('opportunities', 0)} | PnL: ${sess.get('simulated_pnl', 0):.4f}")
+
 with tab_exec:
     st.subheader("Histórico de Execuções (Polymarket Executor)")
     if executions:

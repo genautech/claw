@@ -15,7 +15,7 @@ status_cmd() {
   echo "=== Agent Manager Status ==="
   if openclaw gateway health >/dev/null 2>&1; then ok "Gateway online"; else err "Gateway offline"; fi
 
-  if lsof -Pi :8787 -sTCP:LISTEN -t >/dev/null 2>&1; then ok "Dashboard online (:8787)"; else warn "Dashboard offline"; fi
+  if lsof -Pi :8888 -sTCP:LISTEN -t >/dev/null 2>&1; then ok "Dashboard online (:8888)"; else warn "Dashboard offline"; fi
   if lsof -Pi :8789 -sTCP:LISTEN -t >/dev/null 2>&1; then ok "Polymarket executor online (:8789)"; else warn "Polymarket executor offline"; fi
 
   if [[ -f "$HOOK_LOG" ]]; then
@@ -37,7 +37,7 @@ start_cmd() {
 stop_cmd() {
   openclaw gateway stop || true
   if lsof -Pi :8789 -sTCP:LISTEN -t >/dev/null 2>&1; then kill "$(lsof -ti :8789)" || true; fi
-  if lsof -Pi :8787 -sTCP:LISTEN -t >/dev/null 2>&1; then kill "$(lsof -ti :8787)" || true; fi
+  if lsof -Pi :8888 -sTCP:LISTEN -t >/dev/null 2>&1; then kill "$(lsof -ti :8888)" || true; fi
   ok "Stop sequence executed"
 }
 

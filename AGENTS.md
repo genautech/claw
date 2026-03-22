@@ -14,6 +14,7 @@ Before doing anything else:
 3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
 4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
 5. **If working on Polymarket**: Read `POLYMARKET_IMPROVEMENTS.md` for improvement tasks
+6. **If working on infrastructure/gateway/Mission Control**: Read `INFRASTRUCTURE.md` — single source of truth for all tokens, ports, configs, and fix procedures
 
 Don't ask permission. Just do it.
 

@@ -1,0 +1,2 @@
+{"timestamp": "2026-03-22T00:08:46.838638", "agent": "brimo", "event_type": "brimo_started", "details": {"mode": "dry_run", "tp": 20.0, "sl": 15.0, "ts": 10.0}, "success": true, "error": null}
+{"timestamp": "2026-03-22T00:26:18.238455", "agent": "brimo", "event_type": "brimo_started", "details": {"mode": "dry_run", "tp": 20.0, "sl": 15.0, "ts": 10.0}, "success": true, "error": null}

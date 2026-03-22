@@ -1,0 +1,17 @@
+{
+  "goal": 10000,
+  "goalDays": 30,
+  "minTrade": 0.5,
+  "maxTrade": 5,
+  "maxDaily": 20,
+  "dryRun": true,
+  "minConfidence": "MEDIUM",
+  "minEdge": 5,
+  "autoExecute": false,
+  "capitalInitial": 8.72,
+  "reserveFloor": 6,
+  "takeProfit": 20,
+  "stopLoss": 15,
+  "trailingStop": 10,
+  "maxDailyExposure": 20
+}

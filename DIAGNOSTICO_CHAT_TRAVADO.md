@@ -32,7 +32,7 @@ http://127.0.0.1:18789/chat?session=agent:main:main
 No console do navegador, execute:
 
 ```javascript
-const ws = new WebSocket('ws://127.0.0.1:18789/ws?token=87969d5b456a17e15c44341a10f3b1020c2cc7db3ac3465c02a32de473777a09');
+const ws = new WebSocket('ws://127.0.0.1:18789/ws?token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es');
 ws.onopen = () => console.log('✅ WebSocket conectado!');
 ws.onerror = (e) => console.error('❌ WebSocket erro:', e);
 ws.onclose = (e) => console.log('⚠️ WebSocket fechado:', e.code, e.reason);

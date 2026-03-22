@@ -18,9 +18,10 @@ CLOB_HTTP_TIMEOUT = float(os.environ.get("CLOB_HTTP_TIMEOUT", "30"))
 class ClobClientWrapper:
     """Wrapper around py-clob-client for trading."""
 
-    def __init__(self, private_key: str, address: str, api_key: Optional[str] = None, api_secret: Optional[str] = None, api_passphrase: Optional[str] = None):
+    def __init__(self, private_key: str, address: str, api_key: Optional[str] = None, api_secret: Optional[str] = None, api_passphrase: Optional[str] = None, proxy_address: Optional[str] = None):
         self.private_key = private_key
         self.address = address
+        self.proxy_address = proxy_address or os.environ.get("POLYMARKET_PROXY_ADDRESS")
         self.api_key = api_key or os.environ.get("POLYMARKET_API_KEY")
         self.api_secret = api_secret or os.environ.get("POLYMARKET_API_SECRET")
         self.api_passphrase = api_passphrase or os.environ.get("POLYMARKET_API_PASSPHRASE")
@@ -61,13 +62,18 @@ class ClobClientWrapper:
                 http2=True, proxy=proxy, timeout=CLOB_HTTP_TIMEOUT
             )
 
+        # Use signature_type=2 (Poly Gnosis Safe) if proxy_address is set
+        # This is the correct type for Polymarket proxy wallets
+        sig_type = 2 if self.proxy_address else 0
+        funder = self.proxy_address if self.proxy_address else self.address
+
         # Initialize client
         self._client = ClobClient(
             "https://clob.polymarket.com",
             key=self.private_key,
             chain_id=137,
-            signature_type=0,
-            funder=self.address,
+            signature_type=sig_type,
+            funder=funder,
         )
 
         # Set up API credentials
@@ -82,14 +88,14 @@ class ClobClientWrapper:
                 )
                 self._client.set_api_creds(self._creds)
             except (ImportError, AttributeError):
-                # Fallback: try to create creds object manually
+                # Fallback: try to create creds object using SimpleNamespace
                 try:
-                    # Create a dict-like structure that py-clob-client expects
-                    self._creds = {
-                        "apiKey": self.api_key,
-                        "apiSecret": self.api_secret,
-                        "apiPassphrase": self.api_passphrase
-                    }
+                    from types import SimpleNamespace
+                    self._creds = SimpleNamespace(
+                        api_key=self.api_key,
+                        api_secret=self.api_secret,
+                        api_passphrase=self.api_passphrase
+                    )
                     self._client.set_api_creds(self._creds)
                 except Exception:
                     # If manual creation fails, log warning and use auto-derive

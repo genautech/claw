@@ -1,0 +1,1106 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🥷 ArbitrageNinja — Live Spread Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0a0e17;
+      --surface: #111827;
+      --surface-alt: #1a2332;
+      --border: #1e2d3d;
+      --border-glow: rgba(59, 130, 246, 0.25);
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --text-muted: #64748b;
+      --purple: #6366f1;
+      --purple-dim: rgba(99, 102, 241, 0.15);
+      --green: #10b981;
+      --green-dim: rgba(16, 185, 129, 0.15);
+      --red: #ef4444;
+      --red-dim: rgba(239, 68, 68, 0.15);
+      --amber: #f59e0b;
+      --amber-dim: rgba(245, 158, 11, 0.15);
+      --cyan: #06b6d4;
+      --cyan-dim: rgba(6, 182, 212, 0.15);
+      --blue: #3b82f6;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Animated background grid */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 50% 0%, rgba(59,130,246,0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 30% at 80% 100%, rgba(99,102,241,0.04) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app { position: relative; z-index: 1; padding: 20px; max-width: 1400px; margin: 0 auto; }
+
+    /* Header */
+    .header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 24px; padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header-left h1 {
+      font-size: 26px; font-weight: 700;
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header-left .subtitle { color: var(--text-dim); font-size: 13px; margin-top: 2px; }
+    .header-right { display: flex; gap: 12px; align-items: center; }
+
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .status-badge .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--text-dim);
+    }
+    .status-badge.connected .dot { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+    .status-badge.error .dot { background: var(--red); box-shadow: 0 0 8px var(--red); }
+    .status-badge.connecting .dot { background: var(--amber); animation: pulse 1s infinite; }
+
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* Controls */
+    .controls {
+      display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; align-items: center;
+    }
+    .control-group { display: flex; gap: 8px; align-items: center; }
+    .control-label { font-size: 12px; color: var(--text-dim); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    input[type="text"], select {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 14px; color: var(--text); font-size: 13px; font-family: 'JetBrains Mono', monospace;
+      outline: none; transition: border-color 0.2s;
+    }
+    input[type="text"]:focus, select:focus { border-color: var(--purple); box-shadow: 0 0 0 3px var(--purple-dim); }
+    input[type="text"] { width: 360px; }
+
+    .btn {
+      padding: 10px 20px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all 0.2s; font-family: inherit;
+    }
+    .btn:hover { border-color: var(--purple); background: var(--purple-dim); }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary {
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      border-color: transparent; color: white;
+    }
+    .btn-primary:hover { opacity: 0.9; box-shadow: 0 0 20px rgba(139,92,246,0.3); }
+    .btn-danger { border-color: rgba(239,68,68,0.3); color: var(--red); }
+    .btn-danger:hover { background: var(--red-dim); }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px; margin-bottom: 24px;
+    }
+    .stat-card {
+      background: rgba(17, 24, 39, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(30, 45, 61, 0.6);
+      border-radius: 16px;
+      padding: 18px; position: relative; overflow: hidden;
+      transition: all 0.3s ease;
+    }
+    .stat-card:hover { border-color: rgba(59, 130, 246, 0.3); box-shadow: 0 0 30px rgba(59, 130, 246, 0.08); }
+    .stat-card::after {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--blue), transparent);
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .stat-card:hover::after { opacity: 1; }
+    .stat-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; font-weight: 500; }
+    .stat-value { font-size: 26px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .stat-value.green { color: var(--green); }
+    .stat-value.red { color: var(--red); }
+    .stat-value.purple { color: var(--purple); }
+    .stat-value.cyan { color: var(--cyan); }
+    .stat-value.amber { color: var(--amber); }
+    .stat-sub { font-size: 11px; color: var(--text-dim); margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
+
+    /* Grid Layout */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+
+    /* Panel */
+    .panel {
+      background: rgba(17, 24, 39, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(30, 45, 61, 0.6);
+      border-radius: 16px;
+      overflow: hidden;
+      transition: all 0.3s ease;
+    }
+    .panel:hover {
+      border-color: rgba(59, 130, 246, 0.3);
+      box-shadow: 0 0 30px rgba(59, 130, 246, 0.08);
+    }
+    .panel.full { grid-column: 1 / -1; }
+    .panel-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-alt);
+    }
+    .panel-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .panel-body { padding: 16px 20px; }
+
+    /* Chart Container */
+    .chart-container { position: relative; width: 100%; height: 250px; }
+    #spreadChart { width: 100%; height: 100%; }
+
+    /* Order Book */
+    .orderbook { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+    .ob-side { padding: 0; }
+    .ob-title {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+      padding: 10px 12px; font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+    .ob-title.bids { color: var(--green); background: var(--green-dim); }
+    .ob-title.asks { color: var(--red); background: var(--red-dim); }
+    .ob-row {
+      display: flex; justify-content: space-between;
+      padding: 6px 12px; font-size: 12px; font-family: 'JetBrains Mono', monospace;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      position: relative;
+    }
+    .ob-row .bar {
+      position: absolute; top: 0; bottom: 0; opacity: 0.08;
+    }
+    .ob-row.bid .bar { right: 0; background: var(--green); }
+    .ob-row.ask .bar { left: 0; background: var(--red); }
+    .ob-row .price { font-weight: 600; position: relative; z-index: 1; }
+    .ob-row .size { color: var(--text-dim); position: relative; z-index: 1; }
+    .ob-row.bid .price { color: var(--green); }
+    .ob-row.ask .price { color: var(--red); }
+
+    /* Opportunity Table */
+    .opp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .opp-table th {
+      padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--text-dim); font-weight: 600;
+      border-bottom: 1px solid var(--border); background: var(--surface-alt);
+    }
+    .opp-table td {
+      padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.03);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .opp-table tr:hover td { background: rgba(139,92,246,0.05); }
+    .opp-table .profit { color: var(--green); font-weight: 600; }
+    .opp-table .spread-val { color: var(--amber); font-weight: 600; }
+    .opp-table .time { color: var(--text-dim); }
+
+    /* Ticker */
+    .ticker {
+      display: flex; gap: 20px; padding: 12px 20px;
+      background: var(--surface-alt); border-top: 1px solid var(--border);
+      font-size: 12px; font-family: 'JetBrains Mono', monospace;
+      overflow-x: auto;
+    }
+    .ticker-item { white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+    .ticker-label { color: var(--text-dim); }
+
+    /* Market Info */
+    .market-info {
+      background: var(--surface-alt); border-radius: 10px; padding: 14px 18px;
+      margin-bottom: 16px; border: 1px solid var(--border);
+    }
+    .market-question { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .market-meta { font-size: 12px; color: var(--text-dim); display: flex; gap: 16px; flex-wrap: wrap; }
+
+    /* Log */
+    .log-container {
+      background: #000; border-radius: 8px; padding: 12px;
+      max-height: 300px; overflow-y: auto;
+      font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.6;
+    }
+    .log-line { margin-bottom: 2px; word-break: break-word; }
+    .log-line.opp { color: var(--green); }
+    .log-line.info { color: var(--cyan); }
+    .log-line.warn { color: var(--amber); }
+    .log-line.err { color: var(--red); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+    /* Loading animation */
+    .loading-spinner {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--purple);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .flash { animation: flashBg 0.6s ease; }
+    @keyframes flashBg {
+      0% { background: rgba(34,197,94,0.2); }
+      100% { background: transparent; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>🥷 ArbitrageNinja</h1>
+      <div class="subtitle">High-Frequency Spread Monitor — Polymarket CLOB</div>
+    </div>
+    <div class="header-right">
+      <div class="status-badge" id="wsStatus">
+        <span class="dot"></span>
+        <span id="wsStatusText">Disconnected</span>
+      </div>
+      <div class="status-badge" id="tickCounter">
+        <span>Ticks: </span><span id="tickCount">0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="control-group">
+      <span class="control-label">Market ID:</span>
+      <input type="text" id="marketInput" placeholder="Paste condition_id (0x...) or numeric market ID" />
+    </div>
+    <div class="control-group">
+      <span class="control-label">Min Spread:</span>
+      <input type="text" id="minSpreadInput" value="0.02" style="width: 80px;" />
+    </div>
+    <button class="btn btn-primary" id="btnConnect" onclick="startMonitoring()">▶ Connect</button>
+    <button class="btn btn-danger" id="btnStop" onclick="stopMonitoring()" style="display:none;">⏹ Stop</button>
+    <button class="btn" onclick="loadTrending()">🔥 Trending</button>
+    <button class="btn" onclick="loadHistory()">📜 History</button>
+  </div>
+
+  <!-- Market Info -->
+  <div class="market-info" id="marketInfo" style="display: none;">
+    <div class="market-question" id="marketQuestion">—</div>
+    <div class="market-meta">
+      <span>YES: <strong id="yesPrice">—</strong></span>
+      <span>NO: <strong id="noPrice">—</strong></span>
+      <span>Liquidity: <strong id="liquidity">—</strong></span>
+      <span>Volume 24h: <strong id="volume24h">—</strong></span>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">📊 Ticks</div>
+      <div class="stat-value cyan" id="statTicks">0</div>
+      <div class="stat-sub" id="statTickRate">0/s</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">🎯 Opportunities</div>
+      <div class="stat-value green" id="statOpps">0</div>
+      <div class="stat-sub" id="statOppRate">0% hit rate</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">📐 Current Spread</div>
+      <div class="stat-value amber" id="statSpread">$0.0000</div>
+      <div class="stat-sub" id="statSpreadAvg">Avg: $0.0000</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">🏔️ Max Spread</div>
+      <div class="stat-value purple" id="statMaxSpread">$0.0000</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">💰 Simulated PnL</div>
+      <div class="stat-value green" id="statPnL">$0.0000</div>
+      <div class="stat-sub" id="statTrades">0 trades</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">⏱️ Uptime</div>
+      <div class="stat-value" id="statUptime">00:00</div>
+    </div>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="main-grid">
+    <!-- Spread Chart -->
+    <div class="panel full">
+      <div class="panel-header">
+        <div class="panel-title">📈 Live Spread Chart</div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn" onclick="clearChart()" style="padding: 6px 12px; font-size: 11px;">Clear</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="chart-container">
+          <canvas id="spreadChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Order Book -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">📖 Order Book (Top 10)</div>
+      </div>
+      <div class="orderbook" id="orderbook">
+        <div class="ob-side">
+          <div class="ob-title bids">BIDS (Buyers)</div>
+          <div id="bidsContainer"><div style="padding: 20px; text-align: center; color: var(--text-dim); font-size: 12px;">Waiting for data...</div></div>
+        </div>
+        <div class="ob-side" style="border-left: 1px solid var(--border);">
+          <div class="ob-title asks">ASKS (Sellers)</div>
+          <div id="asksContainer"><div style="padding: 20px; text-align: center; color: var(--text-dim); font-size: 12px;">Waiting for data...</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Events Log -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">🔴 Live Feed</div>
+        <button class="btn" onclick="clearLog()" style="padding: 6px 12px; font-size: 11px;">Clear</button>
+      </div>
+      <div class="panel-body">
+        <div class="log-container" id="logContainer">
+          <div class="log-line info">🥷 ArbitrageNinja ready. Connect to a market to start monitoring.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Opportunities Table -->
+    <div class="panel full">
+      <div class="panel-header">
+        <div class="panel-title">🤑 Arbitrage Opportunities (Spread > Min)</div>
+        <span id="oppCounter" style="font-size: 12px; color: var(--text-dim);">0 detected</span>
+      </div>
+      <div class="panel-body" style="padding: 0; max-height: 400px; overflow-y: auto;">
+        <table class="opp-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Asset</th>
+              <th>Best Bid</th>
+              <th>Best Ask</th>
+              <th>Spread</th>
+              <th>Sim. Profit</th>
+              <th>Cum. PnL</th>
+            </tr>
+          </thead>
+          <tbody id="oppTableBody">
+            <tr><td colspan="7" style="text-align: center; padding: 30px; color: var(--text-dim);">No opportunities yet. Connect to a market to start scanning.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- History (from JSONL) -->
+    <div class="panel full">
+      <div class="panel-header">
+        <div class="panel-title">📜 Trade History (ninja_trades.jsonl)</div>
+        <button class="btn" onclick="loadHistory()" style="padding: 6px 12px; font-size: 11px;">Reload</button>
+      </div>
+      <div class="panel-body" style="padding: 0; max-height: 400px; overflow-y: auto;">
+        <table class="opp-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>Market</th>
+              <th>Spread</th>
+              <th>Profit</th>
+              <th>Cum. PnL</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody">
+            <tr><td colspan="6" style="text-align: center; padding: 30px; color: var(--text-dim);">Click "History" to load past trades.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ticker Bar -->
+  <div class="ticker" id="tickerBar" style="margin-top: 20px; border-radius: 10px; border: 1px solid var(--border);">
+    <div class="ticker-item"><span class="ticker-label">Mode:</span> <span id="tickerMode" style="color: var(--amber);">DRY_RUN</span></div>
+    <div class="ticker-item"><span class="ticker-label">WS:</span> <span id="tickerWS">—</span></div>
+    <div class="ticker-item"><span class="ticker-label">Last Tick:</span> <span id="tickerLastTick">—</span></div>
+    <div class="ticker-item"><span class="ticker-label">Spread Range:</span> <span id="tickerSpreadRange">—</span></div>
+  </div>
+</div>
+
+<script>
+  // ===================== STATE =====================
+  const GAMMA_API = 'https://gamma-api.polymarket.com';
+  const CLOB_WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
+  const LOCAL_DATA_URL = '/data/ninja_trades.jsonl'; // served by local server
+
+  let ws = null;
+  let isRunning = false;
+  let startTime = null;
+  let uptimeTimer = null;
+  let tickRateTimer = null;
+  let lastTickCount = 0;
+  let currentMarket = null;
+
+  const stats = {
+    ticks: 0,
+    opportunities: 0,
+    simulatedTrades: 0,
+    simulatedPnl: 0,
+    maxSpread: 0,
+    spreads: [],
+    currentSpread: 0,
+  };
+
+  // Chart data
+  const chartData = {
+    labels: [],
+    spreads: [],
+    opportunities: [],
+    maxPoints: 200,
+  };
+
+  // ===================== GAMMA API =====================
+  async function fetchMarket(marketId) {
+    try {
+      let url;
+      if (marketId.startsWith('0x')) {
+        url = `${GAMMA_API}/markets?condition_id=${marketId}`;
+      } else {
+        url = `${GAMMA_API}/markets/${marketId}`;
+      }
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let data = await res.json();
+      if (Array.isArray(data)) data = data[0];
+      if (!data) throw new Error('Market not found');
+      return data;
+    } catch (e) {
+      addLog(`❌ Failed to fetch market: ${e.message}`, 'err');
+      return null;
+    }
+  }
+
+  async function fetchTrending(limit = 10) {
+    try {
+      const res = await fetch(`${GAMMA_API}/markets?closed=false&limit=${limit}&order=volume24hr&ascending=false`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      addLog(`❌ Failed to fetch trending: ${e.message}`, 'err');
+      return [];
+    }
+  }
+
+  function parseClob(data) {
+    const tokens = JSON.parse(data.clobTokenIds || '[]');
+    const prices = JSON.parse(data.outcomePrices || '[0.5,0.5]');
+    return {
+      question: data.question || '',
+      yesTokenId: tokens[0] || '',
+      noTokenId: tokens[1] || '',
+      yesPrice: parseFloat(prices[0]) || 0.5,
+      noPrice: parseFloat(prices[1]) || 0.5,
+      volume: parseFloat(data.volume || 0),
+      volume24h: parseFloat(data.volume24hr || 0),
+      liquidity: parseFloat(data.liquidity || 0),
+    };
+  }
+
+  // ===================== WS CONNECT =====================
+  async function startMonitoring() {
+    if (isRunning) return;
+
+    const marketId = document.getElementById('marketInput').value.trim();
+    if (!marketId) {
+      addLog('⚠️ Please enter a market ID or click "Trending" to pick one.', 'warn');
+      return;
+    }
+
+    addLog(`🔍 Fetching market data for: ${marketId}...`, 'info');
+    const raw = await fetchMarket(marketId);
+    if (!raw) return;
+
+    currentMarket = parseClob(raw);
+    showMarketInfo(currentMarket);
+
+    const assets = [currentMarket.yesTokenId, currentMarket.noTokenId].filter(Boolean);
+    if (assets.length === 0) {
+      addLog('❌ No token IDs found for this market.', 'err');
+      return;
+    }
+
+    addLog(`✅ Market: ${currentMarket.question}`, 'info');
+    addLog(`   YES Token: ${currentMarket.yesTokenId.substring(0, 20)}...`, 'info');
+    addLog(`   NO Token:  ${currentMarket.noTokenId ? currentMarket.noTokenId.substring(0, 20) + '...' : 'N/A'}`, 'info');
+    addLog(`🔗 Connecting to CLOB WebSocket...`, 'info');
+
+    try {
+      ws = new WebSocket(CLOB_WS);
+
+      ws.onopen = () => {
+        setStatus('connected', 'Connected');
+        const sub = { assets_ids: assets, type: 'market' };
+        ws.send(JSON.stringify(sub));
+        addLog(`✅ Subscribed to order book stream!`, 'opp');
+        isRunning = true;
+        startTime = Date.now();
+        startTimers();
+        toggleButtons(true);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (Array.isArray(data)) {
+            data.forEach(evt => processEvent(evt));
+          } else {
+            processEvent(data);
+          }
+        } catch (e) {
+          // ignore parse errors
+        }
+      };
+
+      ws.onerror = (e) => {
+        addLog(`❌ WebSocket error`, 'err');
+        setStatus('error', 'Error');
+      };
+
+      ws.onclose = () => {
+        addLog(`🔌 WebSocket closed`, 'warn');
+        setStatus('error', 'Disconnected');
+        isRunning = false;
+        stopTimers();
+        toggleButtons(false);
+      };
+
+    } catch (e) {
+      addLog(`❌ Connection failed: ${e.message}`, 'err');
+    }
+  }
+
+  function stopMonitoring() {
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
+    isRunning = false;
+    stopTimers();
+    toggleButtons(false);
+    setStatus('error', 'Stopped');
+    addLog('⏹ Monitoring stopped.', 'warn');
+    printReport();
+  }
+
+  // ===================== PROCESS EVENTS =====================
+  function processEvent(data) {
+    if (!data.bids || !data.asks) return;
+
+    const bids = data.bids;
+    const asks = data.asks;
+
+    // Update order book display
+    updateOrderBook(bids, asks, data.asset_id || '');
+
+    if (!bids.length || !asks.length) return;
+
+    try {
+      const bestBid = parseFloat(bids[0].price);
+      const bestAsk = parseFloat(asks[0].price);
+      const spread = bestAsk - bestBid;
+      const assetId = data.asset_id || '';
+      const minSpread = parseFloat(document.getElementById('minSpreadInput').value) || 0.02;
+
+      stats.ticks++;
+      stats.spreads.push(spread);
+      stats.currentSpread = spread;
+      if (spread > stats.maxSpread) stats.maxSpread = spread;
+
+      // Update chart
+      addChartPoint(spread);
+
+      // Update stats display
+      updateStats();
+
+      // Log every 25 ticks
+      if (stats.ticks % 25 === 0) {
+        const avg = stats.spreads.slice(-25).reduce((a, b) => a + b, 0) / 25;
+        addLog(`📊 Tick #${stats.ticks} | Spread: $${spread.toFixed(4)} | Avg(25): $${avg.toFixed(4)} | Opps: ${stats.opportunities}`, 'info');
+      }
+
+      // Check for opportunity
+      if (spread > minSpread) {
+        stats.opportunities++;
+        const buyPrice = bestBid + 0.001;
+        const sellPrice = bestAsk - 0.001;
+        const profit = sellPrice - buyPrice;
+
+        stats.simulatedTrades++;
+        stats.simulatedPnl += profit;
+
+        addLog(`🤑 SPREAD #${stats.opportunities}: $${spread.toFixed(4)} on ${assetId.substring(0, 12)}... | BUY@${buyPrice.toFixed(3)} SELL@${sellPrice.toFixed(3)} | Profit: $${profit.toFixed(4)}`, 'opp');
+        addOpportunityRow(assetId, bestBid, bestAsk, spread, profit, stats.simulatedPnl);
+      }
+
+      // Ticker
+      updateTicker(spread);
+
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // ===================== ORDER BOOK =====================
+  function updateOrderBook(bids, asks, assetId) {
+    const bidsEl = document.getElementById('bidsContainer');
+    const asksEl = document.getElementById('asksContainer');
+
+    const maxSize = Math.max(
+      ...bids.slice(0, 10).map(b => parseFloat(b.size || 0)),
+      ...asks.slice(0, 10).map(a => parseFloat(a.size || 0)),
+      1
+    );
+
+    let bidsHtml = '';
+    for (const b of bids.slice(0, 10)) {
+      const pct = (parseFloat(b.size || 0) / maxSize * 100).toFixed(0);
+      bidsHtml += `<div class="ob-row bid"><div class="bar" style="width: ${pct}%"></div><span class="price">$${parseFloat(b.price).toFixed(4)}</span><span class="size">${parseFloat(b.size).toFixed(2)}</span></div>`;
+    }
+    bidsEl.innerHTML = bidsHtml || '<div style="padding: 12px; text-align: center; color: var(--text-dim); font-size: 12px;">No bids</div>';
+
+    let asksHtml = '';
+    for (const a of asks.slice(0, 10)) {
+      const pct = (parseFloat(a.size || 0) / maxSize * 100).toFixed(0);
+      asksHtml += `<div class="ob-row ask"><div class="bar" style="width: ${pct}%"></div><span class="price">$${parseFloat(a.price).toFixed(4)}</span><span class="size">${parseFloat(a.size).toFixed(2)}</span></div>`;
+    }
+    asksEl.innerHTML = asksHtml || '<div style="padding: 12px; text-align: center; color: var(--text-dim); font-size: 12px;">No asks</div>';
+  }
+
+  // ===================== CHART =====================
+  let chartCtx = null;
+  let chartCanvas = null;
+
+  function initChart() {
+    chartCanvas = document.getElementById('spreadChart');
+    chartCtx = chartCanvas.getContext('2d');
+    resizeChart();
+    window.addEventListener('resize', resizeChart);
+    drawChart();
+  }
+
+  function resizeChart() {
+    const rect = chartCanvas.parentElement.getBoundingClientRect();
+    chartCanvas.width = rect.width * (window.devicePixelRatio || 1);
+    chartCanvas.height = rect.height * (window.devicePixelRatio || 1);
+    chartCtx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+    drawChart();
+  }
+
+  function addChartPoint(spread) {
+    const now = new Date();
+    chartData.labels.push(now.toLocaleTimeString());
+    chartData.spreads.push(spread);
+
+    // Track if this was an opportunity
+    const minSpread = parseFloat(document.getElementById('minSpreadInput').value) || 0.02;
+    chartData.opportunities.push(spread > minSpread);
+
+    if (chartData.labels.length > chartData.maxPoints) {
+      chartData.labels.shift();
+      chartData.spreads.shift();
+      chartData.opportunities.shift();
+    }
+    drawChart();
+  }
+
+  function drawChart() {
+    if (!chartCtx) return;
+    const w = chartCanvas.width / (window.devicePixelRatio || 1);
+    const h = chartCanvas.height / (window.devicePixelRatio || 1);
+
+    chartCtx.clearRect(0, 0, w, h);
+
+    if (chartData.spreads.length < 2) {
+      chartCtx.fillStyle = '#52525b';
+      chartCtx.font = '13px Inter, sans-serif';
+      chartCtx.textAlign = 'center';
+      chartCtx.fillText('Waiting for spread data...', w / 2, h / 2);
+      return;
+    }
+
+    const padding = { top: 20, right: 20, bottom: 30, left: 60 };
+    const cw = w - padding.left - padding.right;
+    const ch = h - padding.top - padding.bottom;
+
+    const maxSpread = Math.max(...chartData.spreads) * 1.1 || 0.1;
+    const minSpread = Math.min(...chartData.spreads) * 0.9;
+    const range = maxSpread - minSpread || 0.01;
+
+    // Grid lines
+    chartCtx.strokeStyle = 'rgba(255,255,255,0.05)';
+    chartCtx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = padding.top + (ch * i / 4);
+      chartCtx.beginPath();
+      chartCtx.moveTo(padding.left, y);
+      chartCtx.lineTo(w - padding.right, y);
+      chartCtx.stroke();
+
+      // Y-axis labels
+      const val = maxSpread - (range * i / 4);
+      chartCtx.fillStyle = '#71717a';
+      chartCtx.font = '10px JetBrains Mono, monospace';
+      chartCtx.textAlign = 'right';
+      chartCtx.fillText('$' + val.toFixed(4), padding.left - 8, y + 4);
+    }
+
+    // Min spread threshold line
+    const minSpreadThreshold = parseFloat(document.getElementById('minSpreadInput').value) || 0.02;
+    if (minSpreadThreshold >= minSpread && minSpreadThreshold <= maxSpread) {
+      const thresholdY = padding.top + ch - ((minSpreadThreshold - minSpread) / range * ch);
+      chartCtx.strokeStyle = 'rgba(245,158,11,0.4)';
+      chartCtx.setLineDash([5, 5]);
+      chartCtx.beginPath();
+      chartCtx.moveTo(padding.left, thresholdY);
+      chartCtx.lineTo(w - padding.right, thresholdY);
+      chartCtx.stroke();
+      chartCtx.setLineDash([]);
+      chartCtx.fillStyle = '#f59e0b';
+      chartCtx.font = '10px JetBrains Mono, monospace';
+      chartCtx.textAlign = 'left';
+      chartCtx.fillText('MIN SPREAD', w - padding.right + 4, thresholdY + 4);
+    }
+
+    // Draw area fill
+    const gradient = chartCtx.createLinearGradient(0, padding.top, 0, h - padding.bottom);
+    gradient.addColorStop(0, 'rgba(139, 92, 246, 0.2)');
+    gradient.addColorStop(1, 'rgba(139, 92, 246, 0)');
+
+    chartCtx.beginPath();
+    chartCtx.moveTo(padding.left, h - padding.bottom);
+    for (let i = 0; i < chartData.spreads.length; i++) {
+      const x = padding.left + (cw * i / (chartData.spreads.length - 1));
+      const y = padding.top + ch - ((chartData.spreads[i] - minSpread) / range * ch);
+      chartCtx.lineTo(x, y);
+    }
+    chartCtx.lineTo(padding.left + cw, h - padding.bottom);
+    chartCtx.closePath();
+    chartCtx.fillStyle = gradient;
+    chartCtx.fill();
+
+    // Draw line
+    chartCtx.beginPath();
+    chartCtx.strokeStyle = '#8b5cf6';
+    chartCtx.lineWidth = 2;
+    for (let i = 0; i < chartData.spreads.length; i++) {
+      const x = padding.left + (cw * i / (chartData.spreads.length - 1));
+      const y = padding.top + ch - ((chartData.spreads[i] - minSpread) / range * ch);
+      if (i === 0) chartCtx.moveTo(x, y);
+      else chartCtx.lineTo(x, y);
+    }
+    chartCtx.stroke();
+
+    // Draw opportunity dots
+    for (let i = 0; i < chartData.spreads.length; i++) {
+      if (chartData.opportunities[i]) {
+        const x = padding.left + (cw * i / (chartData.spreads.length - 1));
+        const y = padding.top + ch - ((chartData.spreads[i] - minSpread) / range * ch);
+        chartCtx.beginPath();
+        chartCtx.arc(x, y, 4, 0, Math.PI * 2);
+        chartCtx.fillStyle = '#22c55e';
+        chartCtx.fill();
+        chartCtx.strokeStyle = 'rgba(34,197,94,0.3)';
+        chartCtx.lineWidth = 6;
+        chartCtx.stroke();
+        chartCtx.lineWidth = 2;
+      }
+    }
+
+    // X-axis labels (show ~6 labels)
+    const step = Math.max(1, Math.floor(chartData.labels.length / 6));
+    chartCtx.fillStyle = '#52525b';
+    chartCtx.font = '9px JetBrains Mono, monospace';
+    chartCtx.textAlign = 'center';
+    for (let i = 0; i < chartData.labels.length; i += step) {
+      const x = padding.left + (cw * i / (chartData.spreads.length - 1));
+      chartCtx.fillText(chartData.labels[i], x, h - 8);
+    }
+  }
+
+  function clearChart() {
+    chartData.labels = [];
+    chartData.spreads = [];
+    chartData.opportunities = [];
+    drawChart();
+  }
+
+  // ===================== UI UPDATES =====================
+  function showMarketInfo(m) {
+    document.getElementById('marketInfo').style.display = 'block';
+    document.getElementById('marketQuestion').textContent = m.question;
+    document.getElementById('yesPrice').textContent = '$' + m.yesPrice.toFixed(4);
+    document.getElementById('noPrice').textContent = '$' + m.noPrice.toFixed(4);
+    document.getElementById('liquidity').textContent = '$' + m.liquidity.toLocaleString();
+    document.getElementById('volume24h').textContent = '$' + m.volume24h.toLocaleString();
+  }
+
+  function updateStats() {
+    document.getElementById('tickCount').textContent = stats.ticks;
+    document.getElementById('statTicks').textContent = stats.ticks.toLocaleString();
+    document.getElementById('statOpps').textContent = stats.opportunities.toLocaleString();
+    document.getElementById('statSpread').textContent = '$' + stats.currentSpread.toFixed(4);
+    document.getElementById('statMaxSpread').textContent = '$' + stats.maxSpread.toFixed(4);
+    document.getElementById('statPnL').textContent = '$' + stats.simulatedPnl.toFixed(4);
+    document.getElementById('statTrades').textContent = stats.simulatedTrades + ' trades';
+
+    const hitRate = stats.ticks > 0 ? (stats.opportunities / stats.ticks * 100).toFixed(1) : '0.0';
+    document.getElementById('statOppRate').textContent = hitRate + '% hit rate';
+
+    const avg = stats.spreads.length > 0 ? stats.spreads.slice(-50).reduce((a, b) => a + b, 0) / Math.min(50, stats.spreads.length) : 0;
+    document.getElementById('statSpreadAvg').textContent = 'Avg: $' + avg.toFixed(4);
+
+    document.getElementById('oppCounter').textContent = stats.opportunities + ' detected';
+
+    // Color PnL
+    const pnlEl = document.getElementById('statPnL');
+    pnlEl.className = 'stat-value ' + (stats.simulatedPnl >= 0 ? 'green' : 'red');
+  }
+
+  function addOpportunityRow(assetId, bid, ask, spread, profit, cumPnl) {
+    const tbody = document.getElementById('oppTableBody');
+    if (tbody.querySelector('td[colspan]')) tbody.innerHTML = '';
+
+    const tr = document.createElement('tr');
+    tr.className = 'flash';
+    tr.innerHTML = `
+      <td class="time">${new Date().toLocaleTimeString()}</td>
+      <td title="${assetId}">${assetId.substring(0, 16)}...</td>
+      <td style="color: var(--green);">$${bid.toFixed(4)}</td>
+      <td style="color: var(--red);">$${ask.toFixed(4)}</td>
+      <td class="spread-val">$${spread.toFixed(4)}</td>
+      <td class="profit">$${profit.toFixed(4)}</td>
+      <td style="color: ${cumPnl >= 0 ? 'var(--green)' : 'var(--red)'};">$${cumPnl.toFixed(4)}</td>
+    `;
+    tbody.insertBefore(tr, tbody.firstChild);
+
+    // Keep max 100 rows
+    while (tbody.children.length > 100) {
+      tbody.removeChild(tbody.lastChild);
+    }
+  }
+
+  function updateTicker(spread) {
+    document.getElementById('tickerLastTick').textContent = new Date().toLocaleTimeString();
+    const min = stats.spreads.length > 0 ? Math.min(...stats.spreads.slice(-50)) : 0;
+    const max = stats.spreads.length > 0 ? Math.max(...stats.spreads.slice(-50)) : 0;
+    document.getElementById('tickerSpreadRange').textContent = `$${min.toFixed(4)} — $${max.toFixed(4)}`;
+  }
+
+  function setStatus(cls, text) {
+    const badge = document.getElementById('wsStatus');
+    badge.className = 'status-badge ' + cls;
+    document.getElementById('wsStatusText').textContent = text;
+    document.getElementById('tickerWS').textContent = text;
+    document.getElementById('tickerWS').style.color = cls === 'connected' ? 'var(--green)' : cls === 'error' ? 'var(--red)' : 'var(--amber)';
+  }
+
+  function toggleButtons(running) {
+    document.getElementById('btnConnect').style.display = running ? 'none' : '';
+    document.getElementById('btnStop').style.display = running ? '' : 'none';
+  }
+
+  function addLog(msg, cls = '') {
+    const container = document.getElementById('logContainer');
+    const div = document.createElement('div');
+    div.className = 'log-line ' + cls;
+    div.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+    container.appendChild(div);
+    while (container.children.length > 300) container.removeChild(container.firstChild);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function clearLog() {
+    document.getElementById('logContainer').innerHTML = '';
+  }
+
+  // ===================== TIMERS =====================
+  function startTimers() {
+    uptimeTimer = setInterval(() => {
+      if (startTime) {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+        const s = (elapsed % 60).toString().padStart(2, '0');
+        document.getElementById('statUptime').textContent = `${m}:${s}`;
+      }
+    }, 1000);
+
+    tickRateTimer = setInterval(() => {
+      const rate = stats.ticks - lastTickCount;
+      lastTickCount = stats.ticks;
+      document.getElementById('statTickRate').textContent = `${rate}/s`;
+    }, 1000);
+  }
+
+  function stopTimers() {
+    if (uptimeTimer) clearInterval(uptimeTimer);
+    if (tickRateTimer) clearInterval(tickRateTimer);
+  }
+
+  // ===================== TRENDING =====================
+  async function loadTrending() {
+    addLog('🔥 Fetching trending markets...', 'info');
+    const markets = await fetchTrending(10);
+    if (markets.length === 0) {
+      addLog('❌ No trending markets found.', 'err');
+      return;
+    }
+
+    // Show a picker modal
+    const tbody = document.getElementById('oppTableBody');
+    let html = '';
+    markets.forEach((m, i) => {
+      const tokens = JSON.parse(m.clobTokenIds || '[]');
+      const prices = JSON.parse(m.outcomePrices || '[0.5,0.5]');
+      const vol = parseFloat(m.volume24hr || 0);
+      const liq = parseFloat(m.liquidity || 0);
+      html += `<tr style="cursor: pointer;" onclick="selectMarket('${m.id}', '${(m.question || '').replace(/'/g, "\\'")}')">
+        <td class="time">#${i + 1}</td>
+        <td title="${m.question}">${(m.question || '').substring(0, 50)}...</td>
+        <td style="color: var(--green);">$${parseFloat(prices[0]).toFixed(2)}</td>
+        <td style="color: var(--red);">$${parseFloat(prices[1] || 0).toFixed(2)}</td>
+        <td class="spread-val">$${vol.toLocaleString()}</td>
+        <td>$${liq.toLocaleString()}</td>
+        <td><button class="btn" style="padding: 4px 10px; font-size: 11px;" onclick="event.stopPropagation(); selectMarket('${m.id}', '${(m.question || '').replace(/'/g, "\\'")}')">Select</button></td>
+      </tr>`;
+    });
+
+    tbody.innerHTML = html;
+    addLog(`✅ Found ${markets.length} trending markets. Click one to select.`, 'opp');
+  }
+
+  function selectMarket(id, question) {
+    document.getElementById('marketInput').value = id;
+    addLog(`✅ Selected: ${question}`, 'opp');
+  }
+
+  // ===================== HISTORY =====================
+  async function loadHistory() {
+    addLog('📜 Loading trade history...', 'info');
+    const tbody = document.getElementById('historyTableBody');
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px;"><div class="loading-spinner"></div></td></tr>';
+
+    try {
+      // Try local file server first
+      let data = [];
+      try {
+        const res = await fetch(LOCAL_DATA_URL);
+        if (res.ok) {
+          const text = await res.text();
+          data = text.trim().split('\n').filter(Boolean).map(JSON.parse);
+        }
+      } catch (e) {
+        // fallback: try http://localhost:8765/api/ninja/trades
+        try {
+          const res2 = await fetch('http://localhost:8765/api/ninja/trades');
+          if (res2.ok) {
+            data = await res2.json();
+          }
+        } catch (e2) {
+          // no server running
+        }
+      }
+
+      if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px; color: var(--text-dim);">No history data found. Start the ninja bot or serve data locally.</td></tr>';
+        addLog('⚠️ No trade history found. Run the ninja bot first.', 'warn');
+        return;
+      }
+
+      let html = '';
+      for (const entry of data.reverse().slice(0, 50)) {
+        const time = new Date(entry.timestamp).toLocaleString();
+        const type = entry.type || '—';
+        const market = (entry.market || '').substring(0, 40);
+        const spread = entry.spread ? '$' + entry.spread.toFixed(4) : '—';
+        const profit = entry.profit ? '$' + entry.profit.toFixed(4) : '—';
+        const pnl = entry.cumulative_pnl ? '$' + entry.cumulative_pnl.toFixed(4) : (entry.simulated_pnl ? '$' + entry.simulated_pnl.toFixed(4) : '—');
+
+        const typeColor = type === 'session_summary' ? 'var(--cyan)' : type === 'spread_capture' ? 'var(--green)' : 'var(--text-dim)';
+
+        html += `<tr>
+          <td class="time">${time}</td>
+          <td style="color: ${typeColor};">${type}</td>
+          <td title="${entry.market || ''}">${market}${market.length >= 40 ? '...' : ''}</td>
+          <td class="spread-val">${spread}</td>
+          <td class="profit">${profit}</td>
+          <td style="color: ${parseFloat(pnl.replace('$', '')) >= 0 ? 'var(--green)' : 'var(--red)'};">${pnl}</td>
+        </tr>`;
+      }
+      tbody.innerHTML = html;
+      addLog(`✅ Loaded ${data.length} history entries.`, 'opp');
+
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 30px; color: var(--red);">Error: ${e.message}</td></tr>`;
+      addLog(`❌ Failed to load history: ${e.message}`, 'err');
+    }
+  }
+
+  // ===================== REPORT =====================
+  function printReport() {
+    if (stats.ticks === 0) return;
+    const elapsed = startTime ? ((Date.now() - startTime) / 1000).toFixed(1) : '0';
+    const avg = stats.spreads.length > 0 ? (stats.spreads.reduce((a, b) => a + b, 0) / stats.spreads.length) : 0;
+
+    addLog('━'.repeat(50), 'info');
+    addLog('🥷 RELATÓRIO FINAL DO NINJA', 'opp');
+    addLog('━'.repeat(50), 'info');
+    addLog(`   Mercado: ${currentMarket ? currentMarket.question : 'N/A'}`, 'info');
+    addLog(`   Duração: ${elapsed}s`, 'info');
+    addLog(`   Ticks recebidos: ${stats.ticks}`, 'info');
+    addLog(`   Oportunidades: ${stats.opportunities}`, 'info');
+    addLog(`   Trades simulados: ${stats.simulatedTrades}`, 'info');
+    addLog(`   PnL simulado: $${stats.simulatedPnl.toFixed(4)}`, 'info');
+    addLog(`   Spread médio: $${avg.toFixed(4)}`, 'info');
+    addLog(`   Maior spread: $${stats.maxSpread.toFixed(4)}`, 'info');
+    addLog('━'.repeat(50), 'info');
+  }
+
+  // ===================== INIT =====================
+  initChart();
+</script>
+</body>
+</html>

@@ -49,13 +49,13 @@ echo ""
 
 # Dashboard
 echo "5. Dashboard:"
-if lsof -Pi :8787 -sTCP:LISTEN -t >/dev/null 2>&1; then
-  echo -e "   ${GREEN}✅${NC} Rodando na porta 8787"
+if lsof -Pi :8888 -sTCP:LISTEN -t >/dev/null 2>&1; then
+  echo -e "   ${GREEN}✅${NC} Rodando na porta 8888"
   TOKEN=$(openclaw config get gateway.auth.token 2>/dev/null | grep -v "Doctor" | grep -v "^│" | grep -v "^├" | grep -v "^└" | tr -d ' "' || echo "")
   if [ -n "$TOKEN" ]; then
-    echo "   URL: http://127.0.0.1:8787/#token=$TOKEN"
+    echo "   URL: http://127.0.0.1:8888/#token=$TOKEN"
   else
-    echo "   URL: http://127.0.0.1:8787"
+    echo "   URL: http://127.0.0.1:8888"
   fi
 else
   echo -e "   ${YELLOW}⚠️${NC}  Não está rodando (execute: bash scripts/start-dashboard.sh)"

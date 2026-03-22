@@ -2,7 +2,7 @@
 # ============================================================
 # Clawd Dashboard Launcher
 # ============================================================
-# Starts the local monitoring dashboard on port 8787
+# Starts the local monitoring dashboard on port 8888
 # ============================================================
 
 set -euo pipefail
@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 DASHBOARD_DIR="$PROJECT_DIR/dashboard-web"
-PORT=8787
+PORT=8888
 
 # Get gateway token
 TOKEN=$(openclaw config get gateway.auth.token 2>/dev/null | grep -v "Doctor" | grep -v "^│" | grep -v "^├" | grep -v "^└" | tr -d ' "' || echo "")

@@ -15,12 +15,15 @@ if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
   exit 0
 fi
 
-# Load env from OpenClaw config if available
-if command -v openclaw >/dev/null; then
-  openclaw config get skills.entries.polymarket-exec.env 2>/dev/null | python3 - <<'PY' > /tmp/clawd-polymarket-env.sh
-import json, sys, shlex
+# Load env from OpenClaw config
+echo "Loading env from ~/.openclaw/openclaw.json..."
+python3 - <<'PY' > /tmp/clawd-polymarket-env.sh
+import json, sys, shlex, os
+config_path = os.path.expanduser("~/.openclaw/openclaw.json")
 try:
-    env = json.load(sys.stdin)
+    with open(config_path, "r") as f:
+        config = json.load(f)
+    env = config.get("skills", {}).get("entries", {}).get("polymarket-exec", {}).get("env", {})
 except Exception:
     env = {}
 for k, v in env.items():
@@ -29,10 +32,11 @@ for k, v in env.items():
     print(f"export {k}={shlex.quote(str(v))}")
 PY
 
-  # shellcheck disable=SC1091
-  source /tmp/clawd-polymarket-env.sh || true
-  rm -f /tmp/clawd-polymarket-env.sh
-fi
+# shellcheck disable=SC1091
+source /tmp/clawd-polymarket-env.sh || true
+rm -f /tmp/clawd-polymarket-env.sh
+
+
 
 # Check required vars
 if [[ -z "${POLYMARKET_PK:-}" ]]; then
