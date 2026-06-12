@@ -5,7 +5,7 @@
 Acesse diretamente no navegador:
 
 ```
-http://127.0.0.1:18789/chat?session=agent%3Amain%3Amain&token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
+http://127.0.0.1:18789/chat?session=agent%3Amain%3Amain&token=<gateway-token>
 ```
 
 **Vantagens:**

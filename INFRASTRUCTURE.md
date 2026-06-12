@@ -27,7 +27,7 @@
 
 ### Gateway Auth Token (ATIVO)
 ```
-DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
+<gateway-token>
 ```
 - Este é o token que o **LaunchAgent plist** usa (fonte de verdade para o gateway)
 - Configura em: `~/.openclaw/openclaw.json` → `gateway.auth.token` e `gateway.remote.token`
@@ -36,7 +36,7 @@ DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
 
 ### Gateway Token no plist (NUNCA ALTERAR DIRETAMENTE)
 ```
-DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
+<gateway-token>
 ```
 - Local: `~/Library/LaunchAgents/ai.openclaw.gateway.plist` → `OPENCLAW_GATEWAY_TOKEN`
 - Protegido por SIP — `openclaw gateway install --force` é a única forma de alterá-lo
@@ -62,8 +62,8 @@ DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
 
 | Serviço | URL |
 |---------|-----|
-| Gateway UI | `http://127.0.0.1:18789/#token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es` |
-| Web Chat | `http://127.0.0.1:18789/chat?session=agent%3Amain%3Amain&token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es` |
+| Gateway UI | `http://127.0.0.1:18789/#token=<gateway-token>` |
+| Web Chat | `http://127.0.0.1:18789/chat?session=agent%3Amain%3Amain&token=<gateway-token>` |
 | Mission Control | `http://localhost:3001` |
 | MC API Docs | `http://localhost:8000/docs` |
 | Dashboard | `http://localhost:8888` |
@@ -136,7 +136,7 @@ osascript -e 'do shell script "launchctl bootstrap gui/501 /Users/genautech/Libr
 **Solução definitiva:**
 1. **Garantir que o token na URL está correto:**
    ```
-   http://127.0.0.1:18789/chat?session=agent%3Amain%3Amain&token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
+   http://127.0.0.1:18789/chat?session=agent%3Amain%3Amain&token=<gateway-token>
    ```
 2. **Garantir que o token do config coincide com o do plist:**
    ```bash
@@ -173,7 +173,7 @@ osascript -e 'do shell script "launchctl bootstrap gui/501 /Users/genautech/Libr
    import json
    with open('/Users/genautech/.openclaw/openclaw.json') as f:
        c = json.load(f)
-   PLIST_TOKEN = 'DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es'
+   PLIST_TOKEN = '<gateway-token>'
    c['gateway']['auth']['token'] = PLIST_TOKEN
    c['gateway']['remote']['token'] = PLIST_TOKEN
    with open('/tmp/openclaw_fixed.json', 'w') as f:
@@ -228,10 +228,10 @@ docker compose --env-file /tmp/mc-env up -d
     "controlUi": { "allowInsecureAuth": true },
     "auth": {
       "mode": "token",
-      "token": "DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es"
+      "token": "<gateway-token>"
     },
     "remote": {
-      "token": "DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es"
+      "token": "<gateway-token>"
     }
   }
 }

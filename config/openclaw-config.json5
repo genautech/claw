@@ -112,7 +112,7 @@
     "bind": "auto",
     "auth": {
       "mode": "token",
-      "token": "DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es"
+      "token": "<gateway-token>"
     },
     "tailscale": {
       "mode": "off",
@@ -148,12 +148,12 @@
           "DRY_RUN": "true",
           "MAX_TRADE_USD": "100",
           "MAX_SLIPPAGE_BPS": "500",
-          "EXEC_API_TOKEN": "a6a7fc0a6c24ba376f2614c327f60f79007d2684a8b533d2441330f8abfb69b0",
+          "EXEC_API_TOKEN": "<exec-api-token>",
           "POLYMARKET_PK": "",
           "POLYMARKET_ADDRESS": "",
-          "POLYMARKET_API_KEY": "019c6f85-bc2f-7269-a6f8-77fa60e1d6aa",
-          "POLYMARKET_API_SECRET": "0b74AWQRZZzEWy-3Wf9Z7UycmSI3anwhUQ8bpFuDEE4=",
-          "POLYMARKET_API_PASSPHRASE": "40709d8ca55ecdacaed9514f32ad98921c3d70b080cc99a7546d80aa20256661"
+          "POLYMARKET_API_KEY": "<your-polymarket-api-key>",
+          "POLYMARKET_API_SECRET": "<your-polymarket-api-secret>",
+          "POLYMARKET_API_PASSPHRASE": "<your-polymarket-api-passphrase>"
         }
       }
     }
