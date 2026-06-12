@@ -8,12 +8,12 @@
 
 Abra no navegador (sempre incluir o token na URL!):
 ```
-http://127.0.0.1:18789/chat?session=agent%3Amain%3Amain&token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
+http://127.0.0.1:18789/chat?session=agent%3Amain%3Amain&token=<gateway-token>
 ```
 
 Ou a UI de controle:
 ```
-http://127.0.0.1:18789/#token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
+http://127.0.0.1:18789/#token=<gateway-token>
 ```
 
 **Vantagens:**
@@ -129,7 +129,7 @@ Analise o arquivo scripts/polymarket-exec.py e sugira melhorias de performance
 - ✅ **Telegram** - @genaubbt_bot (funcionando)
 - ✅ **WhatsApp** - +554187607512 (linkado)
 - ⚠️ **Discord** - Plugin habilitado, precisa bot token
-- ✅ **Web Chat** - http://127.0.0.1:18789/chat?token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
+- ✅ **Web Chat** - http://127.0.0.1:18789/chat?token=<gateway-token>
 
 ## 🛠️ Troubleshooting
 

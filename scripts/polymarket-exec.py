@@ -71,7 +71,16 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 MAX_SLIPPAGE_BPS = int(os.environ.get("MAX_SLIPPAGE_BPS", "500"))  # 5%
 EXEC_API_TOKEN = os.environ.get("EXEC_API_TOKEN", "change-me-in-production")
 ALLOWED_MARKETS = os.environ.get("ALLOWED_MARKETS", "").split(",") if os.environ.get("ALLOWED_MARKETS") else None
-DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
+# Safety-first default: paper mode unless explicitly disabled.
+DRY_RUN = os.environ.get("DRY_RUN", "true").lower() == "true"
+# Go-live gate: real CLOB orders require BOTH DRY_RUN=false AND LIVE_TRADING=true.
+# This prevents accidentally flipping a single flag from sending real on-chain trades.
+LIVE_TRADING = os.environ.get("LIVE_TRADING", "false").lower() == "true"
+
+
+def is_live() -> bool:
+    """Real trading is enabled only when dry-run is off AND the live gate is open."""
+    return (not DRY_RUN) and LIVE_TRADING
 
 # Auto-load from OpenClaw config if empty
 if not POLYMARKET_PK:
@@ -91,6 +100,9 @@ if not POLYMARKET_PK:
 # Risk Management (Brimo integration)
 RESERVE_FLOOR_USD = float(os.environ.get("RESERVE_FLOOR_USD", "3.0"))
 MAX_DAILY_EXPOSURE_USD = float(os.environ.get("MAX_DAILY_EXPOSURE_USD", "20.0"))
+# Paper-mode capital baseline used to enforce the reserve floor when there is no
+# live on-chain balance to query (live mode should query real USDC instead).
+CAPITAL_USD = float(os.environ.get("CAPITAL_USD", "1000"))
 daily_exposure_usd = 0.0
 daily_exposure_date = ""
 
@@ -103,6 +115,26 @@ def _load_risk_config() -> dict:
     except Exception:
         pass
     return {}
+
+
+def _reset_exposure_if_new_day() -> None:
+    """Roll the daily exposure counter over at UTC midnight."""
+    global daily_exposure_usd, daily_exposure_date
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    if daily_exposure_date != today:
+        daily_exposure_usd = 0.0
+        daily_exposure_date = today
+
+
+def record_exposure(size_usd: float) -> None:
+    """Accumulate executed notional so the daily-exposure cap actually works.
+
+    Must be called after every accepted order (dry-run included, so paper runs
+    reflect the same limits real trading would hit).
+    """
+    global daily_exposure_usd
+    _reset_exposure_if_new_day()
+    daily_exposure_usd += float(size_usd)
 
 # Global clients
 redis_client: Optional[aioredis.Redis] = None
@@ -150,6 +182,9 @@ class OrderRequest(BaseModel):
     side: str = Field(default="buy")
     sizeUsd: float = Field(gt=0)
     maxPrice: float = Field(default=0.5)
+    # NegRisk (multi-outcome) markets route through a separate adapter on-chain.
+    # Carried through so live execution can set the correct order flag.
+    negRisk: bool = Field(default=False)
 
     @field_validator("outcomeId")
     @classmethod
@@ -280,14 +315,21 @@ def validate_order(market_id: str, size_usd: float, max_price: float) -> tuple[b
     risk_cfg = _load_risk_config()
     reserve = float(risk_cfg.get("reserveFloor", RESERVE_FLOOR_USD))
     max_daily = float(risk_cfg.get("maxDailyExposure", MAX_DAILY_EXPOSURE_USD))
-    global daily_exposure_usd, daily_exposure_date
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    if daily_exposure_date != today:
-        daily_exposure_usd = 0.0
-        daily_exposure_date = today
+    _reset_exposure_if_new_day()
     if daily_exposure_usd + size_usd > max_daily:
         return False, f"Daily exposure ${daily_exposure_usd + size_usd:.2f} would exceed limit ${max_daily}"
-    
+
+    # Enforce reserve floor: never let projected remaining capital drop below it.
+    # In paper mode we use the configured capital baseline; live mode should pass
+    # the real on-chain USDC balance via dashboard-config "capitalInitial".
+    capital = float(risk_cfg.get("capitalInitial", CAPITAL_USD))
+    projected_remaining = capital - (daily_exposure_usd + size_usd)
+    if projected_remaining < reserve:
+        return False, (
+            f"Order would breach reserve floor: projected remaining "
+            f"${projected_remaining:.2f} < reserve ${reserve:.2f}"
+        )
+
     return True, None
 
 
@@ -297,7 +339,9 @@ async def health():
     return {
         "status": "ok",
         "dry_run": DRY_RUN,
+        "live_trading": is_live(),
         "max_trade_usd": MAX_TRADE_USD,
+        "daily_exposure_usd": daily_exposure_usd,
         "consecutive_failures": consecutive_failures
     }
 
@@ -396,8 +440,9 @@ async def place_order(
             log_trade("order_rejected", order_payload, False, error)
             raise HTTPException(status_code=400, detail=error)
         
-        # Dry run check
-        if DRY_RUN:
+        # Go-live gate: anything not explicitly live stays simulated.
+        if not is_live():
+            record_exposure(size_usd)
             log_trade("order_dry_run", order_payload, True, None)
             return {
                 "success": True,
@@ -425,6 +470,7 @@ async def place_order(
         
         # Success
         consecutive_failures = 0
+        record_exposure(size_usd)
         result = {
             "success": True,
             "order_id": order_id,
@@ -463,7 +509,7 @@ async def place_arbitrage(
         live_order_id = None
         exec_error = None
 
-        if not DRY_RUN:
+        if is_live():
             logger.info("Executando arbitragem real via CLOB na blockchain...")
             try:
                 client = get_clob_client()
@@ -481,10 +527,15 @@ async def place_arbitrage(
                     raise Exception(f"Polymarket CLI Error: {error_buy}")
                 
                 live_order_id = order_id_buy
+                record_exposure(size)
             except Exception as e:
                 logger.error(f"Erro na execução da arbitragem real: {e}")
                 exec_error = str(e)
                 real_pnl = 0 # No profit if execution fails
+        else:
+            # Paper/gated path: account for notional so risk limits behave the
+            # same as live, without sending any on-chain order.
+            record_exposure(size)
 
         evt = {
             "timestamp": datetime.utcnow().isoformat(),
@@ -520,10 +571,15 @@ async def place_arbitrage(
                     pass
         evt["cumulative_pnl"] = round(cumulative, 4)
 
-        if not DRY_RUN:
-            # Here we would initialize actual CLOB maker orders on both sides of the spread:
-            # clob.create_order(side="buy", price=req.bestBid + 0.001)
-            # clob.create_order(side="sell", price=req.bestAsk - 0.001)
+        if is_live():
+            # TODO(go-live): complete the second arbitrage leg + on-chain settlement.
+            # For sum-to-one arbitrage the correct flow is two FOK legs (buy YES and
+            # buy NO) followed by merge_complete_sets() + redeem() to realize the
+            # locked profit immediately. This stays behind the LIVE_TRADING gate
+            # until paper PnL is proven positive.
+            # clob.create_order(side="buy", token=yes_token, price=ask_yes, type="FOK")
+            # clob.create_order(side="buy", token=no_token,  price=ask_no,  type="FOK")
+            # clob.merge_and_redeem(condition_id, shares)
             pass
 
         with open(ninja_file, "a") as f:
@@ -724,7 +780,9 @@ def main():
         asyncio.run(process_recommendations())
     elif args.serve:
         logger.info(f"Starting Polymarket Executor API on port {args.port}")
-        logger.info(f"Dry run mode: {DRY_RUN}")
+        logger.info(f"Dry run mode: {DRY_RUN} | Live trading gate open: {is_live()}")
+        if not DRY_RUN and not LIVE_TRADING:
+            logger.warning("DRY_RUN=false but LIVE_TRADING!=true -> orders stay SIMULATED (gate closed).")
         logger.info(f"Max trade size: ${MAX_TRADE_USD}")
         uvicorn.run(app, host="127.0.0.1", port=args.port)
     else:

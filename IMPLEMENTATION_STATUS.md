@@ -62,7 +62,7 @@ Ver `README_exec.md` e `QUICK_START_EXEC.md` para instruções completas.
   - `EXEC_API_TOKEN`: configurado
   - `POLYMARKET_PK`: vazio (precisa configurar para produção)
   - `POLYMARKET_ADDRESS`: vazio (precisa configurar para produção)
-  - `POLYMARKET_API_KEY`: ✅ configurado (019c6f85-bc2f-7269-a6f8-77fa60e1d6aa)
+  - `POLYMARKET_API_KEY`: ✅ configurado (valor em `~/.openclaw/`, fora do git)
   - `POLYMARKET_API_SECRET`: ✅ configurado
   - `POLYMARKET_API_PASSPHRASE`: ✅ configurado
 

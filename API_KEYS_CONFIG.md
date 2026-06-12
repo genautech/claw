@@ -88,9 +88,9 @@ As credenciais da API REST do Polymarket estão configuradas em `~/.openclaw/ope
     "entries": {
       "polymarket-exec": {
         "env": {
-          "POLYMARKET_API_KEY": "019c6f85-bc2f-7269-a6f8-77fa60e1d6aa",
-          "POLYMARKET_API_SECRET": "0b74AWQRZZzEWy-3Wf9Z7UycmSI3anwhUQ8bpFuDEE4=",
-          "POLYMARKET_API_PASSPHRASE": "40709d8ca55ecdacaed9514f32ad98921c3d70b080cc99a7546d80aa20256661"
+          "POLYMARKET_API_KEY": "<your-polymarket-api-key>",
+          "POLYMARKET_API_SECRET": "<your-polymarket-api-secret>",
+          "POLYMARKET_API_PASSPHRASE": "<your-polymarket-api-passphrase>"
         }
       }
     }
@@ -98,4 +98,17 @@ As credenciais da API REST do Polymarket estão configuradas em `~/.openclaw/ope
 }
 ```
 
-**Nota:** Essas credenciais são usadas pelo `ClobClientWrapper` para autenticação na API REST do Polymarket. Se não fornecidas, o cliente tentará criar/derivar credenciais automaticamente.
+**Nota:** Essas credenciais são usadas pelo `ClobClientWrapper` para autenticação na API REST do Polymarket. Se não fornecidas, o cliente tentará criar/derivar credenciais automaticamente. **NUNCA** coloque valores reais neste arquivo (ele é versionado) — mantenha-os apenas em `~/.openclaw/.env` ou `~/.openclaw/openclaw.json` (ambos fora do git).
+
+---
+
+## 🚨 SECURITY: Rotação de credenciais (AÇÃO NECESSÁRIA)
+
+Valores reais já estiveram commitados neste repositório (API Polymarket, chave DeepSeek, gateway token) e continuam acessíveis no **histórico do git**. Sanitizar a árvore atual **não** os remove do histórico. Faça:
+
+- [ ] **Rotacionar Polymarket API** (key/secret/passphrase) — regerar via `create_or_derive_api_creds()` ou no painel; as antigas devem ser consideradas comprometidas.
+- [ ] **Rotacionar `DEEPSEEK_API_KEY`** em https://platform.deepseek.com (revogar a antiga).
+- [ ] **Rotacionar `OPENCLAW_GATEWAY_TOKEN`** (`openssl rand -hex 32`) e atualizar `~/.openclaw/openclaw.json`.
+- [ ] Rotacionar quaisquer outras chaves que já tenham passado pelo `.env`/docs (`GROK`, `ANTHROPIC`, `OPENAI`, `GEMINI`, `OPENROUTER`).
+- [ ] **Scrub do histórico** (destrutivo, requer force-push — execute você mesmo): `git filter-repo --invert-paths --path API_KEYS_CONFIG.md` ou use BFG para limpar os blobs com segredos, depois `git push --force`.
+- [ ] Confirmar que `.env`, `~/.openclaw/` e `*.key`/`*.pem` estão no `.gitignore` (já estão) e nunca versionar segredos reais novamente.

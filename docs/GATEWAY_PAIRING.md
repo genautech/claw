@@ -48,7 +48,7 @@ If the gateway rejects with "missing scope: operator.pairing", use the manual st
    ```
    http://127.0.0.1:18789/?token=SEU_GATEWAY_TOKEN
    ```
-   Exemplo: `http://127.0.0.1:18789/?token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es`
+   Exemplo: `http://127.0.0.1:18789/?token=<gateway-token>`
 
 3. Na interface do OpenClaw (Control UI), procure **Devices** ou **Pairing** / **Dispositivos** e **aprovar** o pedido pendente (ex.: "cli" ou "gateway-client"). Só depois disso o `openclaw` na linha de comando consegue conectar.
 
