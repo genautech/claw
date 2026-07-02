@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { HintTooltip } from '@/components/HintTooltip'
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid
@@ -11,17 +12,22 @@ export default function RiskPage() {
   const [config, setConfig] = useState<any>(null)
   const [events, setEvents] = useState<any[]>([])
 
-  const fetchAll = () => {
-    fetch('/api/data?type=all').then(r => r.json()).then(setData).catch(() => {})
+  const fetchAll = useCallback(() => {
+    fetch('/api/data?type=summary').then(r => r.json()).then(setData).catch(() => {})
     fetch('/api/config').then(r => r.json()).then(setConfig).catch(() => {})
     fetch('/api/data?type=risk-events').then(r => r.json()).then(d => setEvents(d.events || [])).catch(() => {})
-  }
+  }, [])
 
   useEffect(() => {
     fetchAll()
-    const interval = setInterval(fetchAll, 15000)
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      fetchAll()
+    }, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [fetchAll])
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const balance = data?.balance?.usdc ?? config?.capitalInitial ?? 9
   const reserveFloor = config?.reserveFloor ?? 3
@@ -45,26 +51,29 @@ export default function RiskPage() {
     { name: 'Available', value: Math.max(100 - exposurePct, 0), color: '#1e2d3d' },
   ]
 
-  // Event type distribution
-  const eventTypes: Record<string, number> = {}
-  events.forEach(e => {
-    const t = e.event_type?.split('_')[0] || 'other'
-    eventTypes[t] = (eventTypes[t] || 0) + 1
-  })
-  const eventChart = Object.entries(eventTypes).map(([type, count]) => ({
-    type: type.charAt(0).toUpperCase() + type.slice(1),
-    count,
-  }))
+  const eventChart = useMemo(() => {
+    const eventTypes: Record<string, number> = {}
+    events.forEach((e) => {
+      const t = e.event_type?.split('_')[0] || 'other'
+      eventTypes[t] = (eventTypes[t] || 0) + 1
+    })
+    return Object.entries(eventTypes).map(([type, count]) => ({
+      type: type.charAt(0).toUpperCase() + type.slice(1),
+      count,
+    }))
+  }, [events])
 
-  // Config update
   const handleConfigUpdate = async (key: string, value: number) => {
     const updated = { ...config, [key]: value }
-    await fetch('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [key]: value }),
-    })
     setConfig(updated)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: value }),
+      })
+    }, 500)
   }
 
   return (
@@ -72,12 +81,18 @@ export default function RiskPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">🛡️ Risk Management</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            🛡️ Risk Management
+            <HintTooltip hint="Brimo monitora posições e vende automaticamente em TP/SL/trailing stop." />
+          </h1>
           <p className="text-sm text-muted mt-1">Brimo Agent — Proteção de saldo e controle de risco</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="badge badge-success">🐻 Brimo Active</span>
-          <span className="text-xs font-mono text-muted">Refresh: 15s</span>
+          <span className="badge badge-success flex items-center gap-1">
+            🐻 Brimo ativo — proteção de capital
+            <HintTooltip hint="Vendas automáticas quando lucro ou perda atingem limites configurados." />
+          </span>
+          <span className="text-xs font-mono text-muted">Refresh: 30s</span>
         </div>
       </div>
 
@@ -88,10 +103,14 @@ export default function RiskPage() {
         <RiskKpi label="Reserve Floor" value={`$${reserveFloor.toFixed(2)}`} icon="🛡️"
           color={balance > reserveFloor ? 'blue' : 'red'}
           sub={`Buffer: $${reserveBuffer.toFixed(2)}`} />
-        <RiskKpi label="Take Profit" value={`${tp}%`} icon="🎯" color="green" sub="Auto-sell when hit" />
-        <RiskKpi label="Stop Loss" value={`-${sl}%`} icon="🛑" color="red" sub="Cut losses" />
-        <RiskKpi label="Trailing Stop" value={`${ts}%`} icon="📉" color="amber" sub="From peak" />
-        <RiskKpi label="Max Daily" value={`$${maxDaily}`} icon="📊" color="purple" sub="Exposure limit" />
+        <RiskKpi label="Take Profit" value={`${tp}%`} icon="🎯" color="green" sub="Auto-sell when hit"
+          hint="Brimo vende automaticamente quando lucro atinge +X% sobre preço de entrada." />
+        <RiskKpi label="Stop Loss" value={`-${sl}%`} icon="🛑" color="red" sub="Cut losses"
+          hint="Brimo vende automaticamente ao perder −X%. Protege capital." />
+        <RiskKpi label="Trailing Stop" value={`${ts}%`} icon="📉" color="amber" sub="From peak"
+          hint="Stop que sobe conforme o preço sobe — trava lucro sem sair cedo demais." />
+        <RiskKpi label="Max Daily" value={`$${maxDaily}`} icon="📊" color="purple" sub="Exposure limit"
+          hint="Saldo mínimo de reserva. Executor bloqueia novas compras se cash abaixo deste valor." />
       </div>
 
       {/* Main Grid: Gauges + Controls */}
@@ -244,8 +263,8 @@ export default function RiskPage() {
   )
 }
 
-function RiskKpi({ label, value, icon, color, sub }: {
-  label: string; value: string; icon: string; color: string; sub?: string
+function RiskKpi({ label, value, icon, color, sub, hint }: {
+  label: string; value: string; icon: string; color: string; sub?: string; hint?: string
 }) {
   const gradients: Record<string, string> = {
     blue: 'from-blue-500/10 to-indigo-500/5',
@@ -257,7 +276,10 @@ function RiskKpi({ label, value, icon, color, sub }: {
   return (
     <div className={`glass-card p-3 bg-gradient-to-br ${gradients[color] || gradients.blue}`}>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] text-muted uppercase tracking-wide">{label}</span>
+        <span className="text-[10px] text-muted uppercase tracking-wide flex items-center gap-1">
+          {label}
+          {hint && <HintTooltip hint={hint} />}
+        </span>
         <span className="text-sm">{icon}</span>
       </div>
       <div className="text-lg font-bold text-white font-mono">{value}</div>

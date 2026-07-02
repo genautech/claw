@@ -200,6 +200,7 @@ def process_event(data, market_question=""):
                         "size_usd": size_usd,
                         "cumulative_pnl": round(stats["simulated_pnl"], 4),
                         "dry_run": DRY_RUN,
+                        "execution_mode": "dry" if DRY_RUN else "live",
                         "tick": stats["ticks"],
                     }
                     log_ninja_trade(trade)
@@ -211,7 +212,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="High-Frequency Arbitrage Ninja Agent")
     parser.add_argument("--market", type=str, required=True, help="Market ID to arbitrage on")
     parser.add_argument("--duration", type=int, default=0, help="Run for N seconds then stop (0=forever)")
+    parser.add_argument("--daemon", action="store_true", help="Run continuously (same as duration=0)")
     args = parser.parse_args()
-    
-    asyncio.run(ninja_bot(args.market, args.duration))
+
+    duration = args.duration
+    if args.daemon:
+        duration = 0
+
+    asyncio.run(ninja_bot(args.market, duration))
 

@@ -1,0 +1,11 @@
+{
+  "intervalSeconds": 900,
+  "minIntervalSeconds": 300,
+  "maxIntervalSeconds": 1800,
+  "phases": ["preflight", "arbitrage", "analysis", "decision", "execution", "recovery", "observability"],
+  "accelerateOnPendingRecs": true,
+  "accelerateOnErrors": true,
+  "writeMemorySummary": true,
+  "rateLimitBackoffSeconds": 60,
+  "arbitrageScanSeconds": 60
+}

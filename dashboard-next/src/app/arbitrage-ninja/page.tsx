@@ -5,6 +5,8 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   ReferenceLine
 } from 'recharts'
+import { RealityPanel, type ExecutionMode } from '@/components/RealityPanel'
+import { useDashboardData } from '@/hooks/useDashboardData'
 
 // ======================== TYPES ========================
 interface MarketData {
@@ -66,6 +68,7 @@ export default function ArbitrageNinjaPage() {
   const [minSpread, setMinSpread] = useState('0.02')
   const [isRunning, setIsRunning] = useState(false)
   const [autoExecute, setAutoExecute] = useState(false)
+  const [autoExecuteReady, setAutoExecuteReady] = useState(false)
   const [wsStatus, setWsStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected')
   const [currentMarket, setCurrentMarket] = useState<MarketData | null>(null)
   const [stats, setStats] = useState<NinjaStats>({
@@ -86,6 +89,20 @@ export default function ArbitrageNinjaPage() {
   const [startTime, setStartTime] = useState<number | null>(null)
   const [uptime, setUptime] = useState('00:00')
   const [tickRate, setTickRate] = useState(0)
+  const [execMode, setExecMode] = useState<ExecutionMode>('MONITORING')
+  const { data: modeData } = useDashboardData<{
+    mode?: ExecutionMode
+    executorOnline?: boolean
+    executorDryRun?: boolean
+  }>('/api/executor/mode', {
+    intervalMs: 10000,
+    staleTimeMs: 5000,
+  })
+  const [realPnl, setRealPnl] = useState(0)
+  const [realTrades, setRealTrades] = useState(0)
+  const [sseConnected, setSseConnected] = useState(false)
+  const reconnectAttemptRef = useRef(0)
+  const shouldReconnectRef = useRef(false)
 
   // Refs
   const wsRef = useRef<WebSocket | null>(null)
@@ -128,17 +145,96 @@ export default function ArbitrageNinjaPage() {
   }, [])
 
   // ======================== TIMERS & AUTO-UPDATE ========================
-  useEffect(() => {
-    // Initial history load
-    loadHistory()
-    
-    // Auto-refresh history every 5 seconds
-    const historyInterval = setInterval(() => {
-      loadHistory(true) // Pass true to avoid polluting logs every 5s
-    }, 5000)
-
-    return () => clearInterval(historyInterval)
+  const applyHistory = useCallback((data: unknown[]) => {
+    setHistory(data)
+    let livePnl = 0
+    let liveCount = 0
+    for (const row of data as Record<string, unknown>[]) {
+      const mode = row.execution_mode
+      const hasLive = row.live_order_id || row.live_order_id_buy
+      if (mode === 'live' || hasLive) {
+        liveCount += 1
+        livePnl += Number(row.cumulative_pnl ?? row.profit ?? 0)
+      }
+    }
+    if (data.length > 0) {
+      const last = data[data.length - 1] as Record<string, unknown>
+      if (last.cumulative_pnl != null && (last.execution_mode === 'live' || last.live_order_id)) {
+        livePnl = Number(last.cumulative_pnl)
+      }
+    }
+    setRealTrades(liveCount)
+    setRealPnl(livePnl)
   }, [])
+
+  const loadHistory = useCallback(async (silent: boolean = false) => {
+    if (!silent) addLog('📜 Loading trade history...', 'info')
+    try {
+      const res = await fetch('/api/ninja?limit=50')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      applyHistory(data)
+      if (!silent) addLog(`✅ Loaded ${data.length} history entries.`, 'opp')
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'unknown'
+      if (!silent) addLog(`❌ Failed to load history: ${msg}`, 'err')
+    }
+  }, [addLog, applyHistory])
+
+  useEffect(() => {
+    if (modeData?.mode) setExecMode(modeData.mode)
+  }, [modeData])
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('ninja-autoExecute')
+      if (saved === 'true') setAutoExecute(true)
+    } catch { /* ignore */ }
+    setAutoExecuteReady(true)
+  }, [])
+
+  const setAutoExecutePersisted = useCallback((value: boolean) => {
+    setAutoExecute(value)
+    try {
+      sessionStorage.setItem('ninja-autoExecute', value ? 'true' : 'false')
+    } catch { /* ignore */ }
+  }, [])
+
+  const tickerMode: ExecutionMode = autoExecute
+    ? (modeData?.executorOnline && !modeData?.executorDryRun ? 'LIVE' : 'ARMED')
+    : (execMode === 'OFFLINE' ? 'OFFLINE' : 'MONITORING')
+
+  useEffect(() => {
+    loadHistory()
+
+    const es = new EventSource('/api/ninja/stream?limit=50')
+    es.addEventListener('open', () => setSseConnected(true))
+    es.addEventListener('error', () => setSseConnected(false))
+    es.addEventListener('init', (ev) => {
+      try {
+        const payload = JSON.parse((ev as MessageEvent).data)
+        if (payload.trades) applyHistory(payload.trades)
+      } catch { /* ignore */ }
+    })
+    es.addEventListener('update', (ev) => {
+      try {
+        const payload = JSON.parse((ev as MessageEvent).data)
+        if (payload.trades) applyHistory(payload.trades)
+      } catch { /* ignore */ }
+    })
+
+    return () => {
+      setSseConnected(false)
+      es.close()
+    }
+  }, [loadHistory, applyHistory])
+
+  useEffect(() => {
+    if (sseConnected) return
+    const pollMs = isRunning ? 5000 : 15000
+    const id = setInterval(() => loadHistory(true), pollMs)
+    return () => clearInterval(id)
+  }, [isRunning, loadHistory, sseConnected])
 
   useEffect(() => {
     if (!isRunning || !startTime) return
@@ -229,8 +325,12 @@ export default function ArbitrageNinjaPage() {
   }
 
   // ======================== WEBSOCKET ========================
-  const startMonitoring = async (targetId?: string) => {
-    if (isRunning) return
+  const startMonitoring = async (targetId?: string, forceReconnect = false) => {
+    if (isRunning && !forceReconnect) return
+    if (forceReconnect && wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
     const idToUse = targetId || marketId
     if (!idToUse.trim()) {
       addLog('⚠️ Please enter a market ID or click "Trending" to pick one.', 'warn')
@@ -260,6 +360,8 @@ export default function ArbitrageNinjaPage() {
       wsRef.current = ws
 
       ws.onopen = () => {
+        reconnectAttemptRef.current = 0
+        shouldReconnectRef.current = true
         setWsStatus('connected')
         ws.send(JSON.stringify({ assets_ids: assets, type: 'market' }))
         addLog('✅ Subscribed to order book stream!', 'opp')
@@ -288,7 +390,16 @@ export default function ArbitrageNinjaPage() {
       ws.onclose = () => {
         addLog('🔌 WebSocket closed', 'warn')
         setWsStatus('disconnected')
-        setIsRunning(false)
+        if (shouldReconnectRef.current && reconnectAttemptRef.current < 8) {
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current), 30000)
+          reconnectAttemptRef.current += 1
+          addLog(`🔄 Reconnecting in ${delay / 1000}s...`, 'info')
+          setTimeout(() => {
+            if (shouldReconnectRef.current && marketId) startMonitoring(marketId, true)
+          }, delay)
+        } else {
+          setIsRunning(false)
+        }
       }
     } catch (e: any) {
       addLog(`❌ Connection failed: ${e.message}`, 'err')
@@ -297,6 +408,8 @@ export default function ArbitrageNinjaPage() {
   }
 
   const stopMonitoring = () => {
+    shouldReconnectRef.current = false
+    reconnectAttemptRef.current = 0
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null
@@ -341,8 +454,8 @@ export default function ArbitrageNinjaPage() {
 
         if (spread > threshold) {
           newOpps++
-          const buyPrice = bestBid + 0.001
-          const sellPrice = bestAsk - 0.001
+          const buyPrice = Math.min(0.99, Math.max(0.01, bestBid + 0.001))
+          const sellPrice = Math.min(0.99, Math.max(0.01, bestAsk - 0.001))
           const profit = sellPrice - buyPrice
           newSimTrades++
           newSimPnl += profit
@@ -364,9 +477,24 @@ export default function ArbitrageNinjaPage() {
 
           // Live Execution Handling!
           if (autoExecRef.current && !isExecutingRef.current) {
+            const marketIdValue = marketId || document.getElementById('marketIdHidden')?.getAttribute('data-value') || ''
+
+            if (!marketIdValue) {
+              setLogs(prevLogs => [...prevLogs.slice(-299), {
+                msg: '⚠️ Auto-Exec ignorado: selecione um mercado com ID válido',
+                type: 'warn' as const,
+                time: new Date().toLocaleTimeString()
+              }])
+            } else if (buyPrice >= sellPrice) {
+              setLogs(prevLogs => [...prevLogs.slice(-299), {
+                msg: `⚠️ Auto-Exec ignorado: spread inviável após limites CLOB (buy $${buyPrice.toFixed(3)} ≥ sell $${sellPrice.toFixed(3)})`,
+                type: 'warn' as const,
+                time: new Date().toLocaleTimeString()
+              }])
+            } else {
             isExecutingRef.current = true
             setLogs(prevLogs => [...prevLogs.slice(-299), {
-              msg: `⚡ AUTO-EXECUTING Spread Capture on ${assetId.substring(0, 8)}... (${spread.toFixed(4)} spread)`,
+              msg: `⚡ AUTO-EXECUTING Spread Capture on ${assetId.substring(0, 8)}... (buy $${buyPrice.toFixed(3)})`,
               type: 'warn' as const,
               time: new Date().toLocaleTimeString()
             }])
@@ -376,13 +504,13 @@ export default function ArbitrageNinjaPage() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                marketId: document.getElementById('marketIdHidden')?.getAttribute('data-value') || '',
+                marketId: marketIdValue,
                 asset: currentAssetRef.current,
                 bestBid: bestBid,
                 bestAsk: bestAsk,
                 spread: spread,
                 profit: profit,
-                sizeUsd: 1.0
+                sizeUsd: 5.0
               })
             }).then(r => r.json()).then(res => {
               if (res.error) {
@@ -394,6 +522,7 @@ export default function ArbitrageNinjaPage() {
               .finally(() => {
                  setTimeout(() => { isExecutingRef.current = false }, 3000) // 3s cooldown between arb shots
               })
+            }
           }
         }
 
@@ -429,20 +558,6 @@ export default function ArbitrageNinjaPage() {
       if (isOpp) playBeep()
 
     } catch {}
-  }
-
-  // ======================== LOAD HISTORY ========================
-  const loadHistory = async (silent: boolean = false) => {
-    if (!silent) addLog('📜 Loading trade history...', 'info')
-    try {
-      const res = await fetch('/api/ninja?limit=50')
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setHistory(data)
-      if (!silent) addLog(`✅ Loaded ${data.length} history entries.`, 'opp')
-    } catch (e: any) {
-      if (!silent) addLog(`❌ Failed to load history: ${e.message}`, 'err')
-    }
   }
 
   // Calculate derived stats
@@ -484,6 +599,12 @@ export default function ArbitrageNinjaPage() {
           </button>
         </div>
       </div>
+
+      <RealityPanel
+        variant="full"
+        autoExecute={autoExecute}
+        onAutoExecuteChange={setAutoExecutePersisted}
+      />
 
       {/* Controls */}
       <div className="glass-card p-4">
@@ -579,8 +700,11 @@ export default function ArbitrageNinjaPage() {
         <NinjaKpi label="📐 Current Spread" value={`$${stats.currentSpread.toFixed(4)}`} sub={`Avg: $${avgSpread}`} color="amber" />
         <NinjaKpi label="🏔️ Max Spread" value={`$${stats.maxSpread.toFixed(4)}`} sub="" color="purple" />
         <NinjaKpi label="💰 Simulated PnL" value={`$${stats.simulatedPnl.toFixed(4)}`}
-          sub={`${stats.simulatedTrades} trades`}
+          sub={`${stats.simulatedTrades} trades (browser estimate)`}
           color={stats.simulatedPnl >= 0 ? 'green' : 'red'} />
+        <NinjaKpi label="💵 Real PnL" value={`$${realPnl.toFixed(4)}`}
+          sub={`${realTrades} live entries`}
+          color={realPnl >= 0 ? 'green' : 'red'} />
         <NinjaKpi label="⏱️ Uptime" value={uptime} sub="" color="blue" />
       </div>
 
@@ -642,11 +766,22 @@ export default function ArbitrageNinjaPage() {
                     value: 'MIN SPREAD', position: 'right', fill: '#f59e0b', fontSize: 10
                   }} />
                   <Area type="monotone" dataKey="spread" stroke="#8b5cf6" fill="url(#colorSpread)" strokeWidth={2}
-                    dot={(props: any) => {
-                      if (props.payload?.isOpp) {
-                        return <circle cx={props.cx} cy={props.cy} r={4} fill="#22c55e" stroke="rgba(34,197,94,0.3)" strokeWidth={6} />
+                    dot={(props: { cx?: number; cy?: number; index?: number; payload?: { isOpp?: boolean } }) => {
+                      const key = `spread-dot-${props.index ?? 0}`
+                      if (props.payload?.isOpp && props.cx != null && props.cy != null) {
+                        return (
+                          <circle
+                            key={key}
+                            cx={props.cx}
+                            cy={props.cy}
+                            r={4}
+                            fill="#22c55e"
+                            stroke="rgba(34,197,94,0.3)"
+                            strokeWidth={6}
+                          />
+                        )
                       }
-                      return <circle cx={0} cy={0} r={0} fill="none" />
+                      return <circle key={key} cx={0} cy={0} r={0} fill="none" />
                     }}
                   />
                 </AreaChart>
@@ -839,8 +974,13 @@ export default function ArbitrageNinjaPage() {
         <div className="flex gap-5">
           <div className="flex gap-2 items-center">
             <span className="text-muted">Mode:</span>
-            <span className={`font-bold ${autoExecute ? 'text-danger animate-pulse' : 'text-amber-400'}`}>
-              {autoExecute ? 'LIVE_EXECUTION' : 'DRY_RUN'}
+            <span className={`font-bold ${
+              execMode === 'LIVE' ? 'text-danger animate-pulse' :
+              execMode === 'ARMED' ? 'text-amber-400' :
+              tickerMode === 'ARMED' ? 'text-amber-400' :
+              execMode === 'OFFLINE' ? 'text-red-400' : 'text-muted'
+            }`}>
+              {autoExecuteReady ? tickerMode : execMode}
             </span>
           </div>
           <div className="flex gap-2 items-center">
@@ -857,7 +997,7 @@ export default function ArbitrageNinjaPage() {
             {autoExecute ? '⚠️ Auto-Execute Ativado' : 'Simulação de Ganhos'}
           </span>
           <button 
-            onClick={() => setAutoExecute(!autoExecute)}
+            onClick={() => setAutoExecutePersisted(!autoExecute)}
             title={autoExecute ? 'Desativar Auto-Execute' : 'Ativar Auto-Execute'}
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background ${autoExecute ? 'bg-danger' : 'bg-surface-2 border border-border'}`}
           >

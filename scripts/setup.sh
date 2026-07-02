@@ -153,6 +153,22 @@ if [[ -d "$WORKSPACE_SKILLS/latencyninja" ]]; then
   cp "$WORKSPACE_SKILLS/latencyninja/SKILL.md" "$OPENCLAW_WORKSPACE_SKILLS/latencyninja/"
   log "LatencyNinja skill installed"
 fi
+if [[ -d "$WORKSPACE_SKILLS/polybot-analyzer" ]]; then
+  mkdir -p "$OPENCLAW_WORKSPACE_SKILLS/polybot-analyzer"
+  cp "$WORKSPACE_SKILLS/polybot-analyzer/SKILL.md" "$OPENCLAW_WORKSPACE_SKILLS/polybot-analyzer/"
+  [[ -f "$WORKSPACE_SKILLS/polybot-analyzer/_meta.json" ]] && cp "$WORKSPACE_SKILLS/polybot-analyzer/_meta.json" "$OPENCLAW_WORKSPACE_SKILLS/polybot-analyzer/"
+  log "Polybot Analyzer skill installed"
+fi
+if [[ -d "$WORKSPACE_SKILLS/trading-knowledge" ]]; then
+  mkdir -p "$OPENCLAW_WORKSPACE_SKILLS/trading-knowledge"
+  cp "$WORKSPACE_SKILLS/trading-knowledge/index.md" "$OPENCLAW_WORKSPACE_SKILLS/trading-knowledge/SKILL.md"
+  log "Trading knowledge skill installed"
+fi
+if [[ -d "$WORKSPACE_SKILLS/polymarket-exec" ]]; then
+  mkdir -p "$OPENCLAW_WORKSPACE_SKILLS/polymarket-exec"
+  cp "$WORKSPACE_SKILLS/polymarket-exec/SKILL.md" "$OPENCLAW_WORKSPACE_SKILLS/polymarket-exec/"
+  log "Polymarket Executor skill installed"
+fi
 
 # --- 8. Install dashboard dependencies ---
 if [[ -d "$PROJECT_DIR/dashboard" ]]; then

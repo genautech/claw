@@ -320,6 +320,31 @@
       </div>
     </div>
 
+    <!-- Polybot Analyzer Panel -->
+    <div class="panel" style="grid-column: 1 / -1;">
+      <div class="panel-header">
+        <div class="panel-title">Bot Analyses (Polybot Analyzer)</div>
+        <button class="refresh-btn" onclick="refreshBotAnalyses()">Refresh</button>
+      </div>
+      <div class="panel-content" style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+          <thead style="border-bottom: 1px solid var(--border);">
+            <tr>
+              <th style="padding: 8px;">Time</th>
+              <th style="padding: 8px;">Wallet</th>
+              <th style="padding: 8px;">Strategy</th>
+              <th style="padding: 8px;">Bot?</th>
+              <th style="padding: 8px;">Bot Ratio</th>
+              <th style="padding: 8px;">minEdge</th>
+            </tr>
+          </thead>
+          <tbody id="bot-analyses-tbody">
+            <tr><td colspan="6" class="empty">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Trade Executions Panel -->
     <div class="panel" style="grid-column: 1 / -1;">
       <div class="panel-header">
@@ -730,6 +755,36 @@
       tbody.innerHTML = html;
     }
 
+    async function refreshBotAnalyses() {
+      const tbody = document.getElementById('bot-analyses-tbody');
+      const rows = await fetchJsonl('/data/bot_analyses.jsonl');
+      if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">No bot analyses yet. Run: python3 scripts/agent_polybot_analyzer.py --all</td></tr>';
+        return;
+      }
+
+      let html = '';
+      for (const row of rows.slice(-10).reverse()) {
+        const time = new Date(row.analyzed_at).toLocaleTimeString();
+        const wallet = String(row.wallet || '').substring(0, 12) + '...';
+        const strategy = row.strategy || '-';
+        const isBot = row.is_bot ? '<span class="value success">Yes</span>' : '<span class="value">No</span>';
+        const ratio = row.bot_ratio != null ? (row.bot_ratio * 100).toFixed(1) + '%' : '-';
+        const minEdge = row.params && row.params.suggested_min_edge != null ? row.params.suggested_min_edge + '%' : '-';
+        html += `
+          <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <td style="padding: 8px; color: var(--text-dim);">${time}</td>
+            <td style="padding: 8px; font-family: monospace; font-size: 11px;" title="${row.wallet || ''}">${wallet}</td>
+            <td style="padding: 8px;">${strategy}</td>
+            <td style="padding: 8px;">${isBot}</td>
+            <td style="padding: 8px;">${ratio}</td>
+            <td style="padding: 8px; color: var(--accent);">${minEdge}</td>
+          </tr>
+        `;
+      }
+      tbody.innerHTML = html;
+    }
+
     async function refreshExecutions() {
       const tbody = document.getElementById('executions-tbody');
       const execs = await fetchJsonl('/data/executions.jsonl');
@@ -810,6 +865,7 @@
       refreshSessions();
       refreshConfig();
       refreshRecommendations();
+      refreshBotAnalyses();
       refreshExecutions();
       initCanvas();
       
@@ -821,6 +877,7 @@
         refreshChannels();
         refreshSessions();
         refreshRecommendations();
+        refreshBotAnalyses();
         refreshExecutions();
       }, 60000);  // 60 seconds to reduce API calls
     }

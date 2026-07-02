@@ -142,6 +142,13 @@
       "configdash": {
         "enabled": true
       },
+      "polybot-analyzer": {
+        "enabled": true,
+        "env": {
+          "POLYBOT_WATCHLIST": "data/bot_watchlist.json",
+          "POLYBOT_LIMIT": "100"
+        }
+      },
       "polymarket-exec": {
         "enabled": true,
         "env": {

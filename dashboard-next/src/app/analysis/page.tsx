@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import {
   BarChart, Bar, PieChart, Pie, Cell, RadarChart, Radar, PolarGrid, PolarAngleAxis,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
@@ -11,32 +11,75 @@ export default function AnalysisPage() {
   const [recData, setRecData] = useState<any>(null)
   const [simData, setSimData] = useState<any>(null)
   const [approving, setApproving] = useState<Record<string, boolean>>({})
-  const [approvedFixes, setApprovedFixes] = useState<Record<string, boolean>>({})
+  const [correctionStatus, setCorrectionStatus] = useState<Record<string, { status: string; message?: string }>>({})
+
+  const fetchCorrectionStatus = () => {
+    fetch('/api/corrections')
+      .then((r) => r.json())
+      .then((d) => {
+        const byError = d.byErrorName || {}
+        const mapped: Record<string, { status: string; message?: string }> = {}
+        for (const [name, entry] of Object.entries(byError)) {
+          const e = entry as { status?: string; result_message?: string; description?: string }
+          mapped[name] = {
+            status: e.status || 'pending',
+            message: e.result_message || e.description,
+          }
+        }
+        setCorrectionStatus(mapped)
+      })
+      .catch(() => {})
+  }
 
   const handleApproveFix = async (errorName: string, recommendation: string) => {
-    setApproving(prev => ({ ...prev, [errorName]: true }))
+    setApproving((prev) => ({ ...prev, [errorName]: true }))
     try {
       await fetch('/api/corrections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ errorName, action: recommendation })
+        body: JSON.stringify({ errorName, action: recommendation }),
       })
-      setApprovedFixes(prev => ({ ...prev, [errorName]: true }))
+      setCorrectionStatus((prev) => ({
+        ...prev,
+        [errorName]: { status: 'queued', message: 'Aguardando execução do CorrectionAgent' },
+      }))
+      fetchCorrectionStatus()
     } catch (e) {
       console.error('Failed to approve correction', e)
     } finally {
-      setApproving(prev => ({ ...prev, [errorName]: false }))
+      setApproving((prev) => ({ ...prev, [errorName]: false }))
     }
   }
 
-  useEffect(() => {
-    fetch('/api/data?type=executions').then(r => r.json()).then(setExecData)
-    fetch('/api/data?type=recommendations').then(r => r.json()).then(setRecData)
-    fetch('/api/data?type=simulated').then(r => r.json()).then(setSimData)
+  const fetchData = useCallback(async () => {
+    const [exec, rec, sim] = await Promise.all([
+      fetch('/api/data?type=executions').then((r) => r.json()).catch(() => null),
+      fetch('/api/data?type=recommendations').then((r) => r.json()).catch(() => null),
+      fetch('/api/data?type=simulated').then((r) => r.json()).catch(() => null),
+    ])
+    if (exec) setExecData(exec)
+    if (rec) setRecData(rec)
+    if (sim) setSimData(sim)
   }, [])
 
-  // Analyze strategies from simulated data
-  const strategyPerf = (() => {
+  useEffect(() => {
+    fetchData()
+    fetchCorrectionStatus()
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      fetchCorrectionStatus()
+    }, 10000)
+    const dataInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      fetchData()
+    }, 30000)
+    return () => {
+      clearInterval(interval)
+      clearInterval(dataInterval)
+    }
+  }, [fetchData])
+
+  const strategyPerf = useMemo(() => {
     if (!simData?.data) return []
     const strats: Record<string, { total: number; buy: number; pass: number; avgConf: number }> = {}
     const confMap: Record<string, number> = { LOW: 1, MEDIUM: 2, HIGH: 3 }
@@ -59,10 +102,9 @@ export default function AnalysisPage() {
       }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 8)
-  })()
+  }, [simData])
 
-  // Confidence distribution
-  const confDist = (() => {
+  const confDist = useMemo(() => {
     if (!simData?.data) return []
     const conf: Record<string, number> = {}
     simData.data.forEach((s: any) => {
@@ -70,10 +112,9 @@ export default function AnalysisPage() {
       conf[c] = (conf[c] || 0) + 1
     })
     return Object.entries(conf).map(([name, value]) => ({ name, value }))
-  })()
+  }, [simData])
 
-  // Error analysis
-  const errorAnalysis = (() => {
+  const errorAnalysis = useMemo(() => {
     if (!execData?.stats?.errorTypes) return []
     return Object.entries(execData.stats.errorTypes)
       .map(([name, count]) => ({ name, count, percentage: 0 }))
@@ -82,10 +123,9 @@ export default function AnalysisPage() {
         return { ...item, percentage: Math.round(((item.count as number) / total) * 100) }
       })
       .sort((a, b) => (b.count as number) - (a.count as number))
-  })()
+  }, [execData])
 
-  // Market diversity (unique markets analyzed)
-  const marketStats = (() => {
+  const marketStats = useMemo(() => {
     if (!simData?.data) return { total: 0, unique: 0, avgEdge: 0 }
     const markets = new Set(simData.data.map((s: any) => s.market_id))
     const edges = simData.data.filter((s: any) => s.edge).map((s: any) => s.edge)
@@ -94,7 +134,7 @@ export default function AnalysisPage() {
       unique: markets.size,
       avgEdge: edges.length > 0 ? edges.reduce((a: number, b: number) => a + b, 0) / edges.length : 0,
     }
-  })()
+  }, [simData])
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#ec4899', '#14b8a6', '#a855f7']
 
@@ -219,19 +259,47 @@ export default function AnalysisPage() {
               else recommendation = 'Investigar e corrigir log stack trace na base do projeto'
 
               const isPending = approving[err.name]
-              const isApproved = approvedFixes[err.name]
+              const statusEntry = correctionStatus[err.name]
+              const status = statusEntry?.status
+              const statusMessage = statusEntry?.message
+
+              const buttonLabel = (() => {
+                if (isPending) return '⏳ Enviando...'
+                if (status === 'queued') return '⏳ Na fila do agente...'
+                if (status === 'proposed') return '🚀 Aprovar Correção'
+                if (status === 'applied') return '✅ Aplicada'
+                if (status === 'partial') return '⚠️ Parcial'
+                if (status === 'failed') return '❌ Falhou'
+                return '🚀 Aprovar Correção'
+              })()
+
+              const buttonClass = (() => {
+                if (status === 'applied') return 'bg-success/20 text-success cursor-default'
+                if (status === 'partial') return 'bg-warning/20 text-warning cursor-default'
+                if (status === 'failed') return 'bg-danger/20 text-danger cursor-default'
+                if (status === 'queued' || isPending) return 'bg-muted/20 text-muted cursor-default'
+                return 'bg-accent/20 text-accent hover:bg-accent hover:text-white'
+              })()
+
+              const isDisabled = isPending || ['queued', 'applied', 'partial'].includes(status || '')
 
               return (
                 <div key={err.name} className="glass-card p-3 border-l-2 border-danger space-y-2">
                   <div className="text-xs font-medium text-white">{err.name}</div>
                   <div className="text-[11px] text-muted">{recommendation}</div>
+                  {statusMessage && status && !['queued', 'proposed'].includes(status) && (
+                    <div className="text-[10px] text-muted" title={statusMessage}>
+                      {statusMessage}
+                    </div>
+                  )}
                   <div className="pt-2 flex justify-end">
                     <button 
-                      className={`text-[10px] px-3 py-1.5 rounded-md font-semibold transition-all ${isApproved ? 'bg-success/20 text-success cursor-default' : 'bg-accent/20 text-accent hover:bg-accent hover:text-white'}`}
-                      onClick={() => !isApproved && handleApproveFix(err.name, recommendation)}
-                      disabled={isPending || isApproved}
+                      className={`text-[10px] px-3 py-1.5 rounded-md font-semibold transition-all ${buttonClass}`}
+                      onClick={() => !isDisabled && handleApproveFix(err.name, recommendation)}
+                      disabled={isDisabled}
+                      title={statusMessage}
                     >
-                      {isPending ? '⏳ Enviando...' : isApproved ? '✅ Aprovada / Em progresso' : '🚀 Aprovar Correção'}
+                      {buttonLabel}
                     </button>
                   </div>
                 </div>

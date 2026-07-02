@@ -1,0 +1,64 @@
+{
+  "cycleId": "cycle-20260702T031828Z-3",
+  "cycleNumber": 3,
+  "startedAt": "2026-07-02T03:18:28Z",
+  "completedAt": "2026-07-02T03:19:02Z",
+  "phases": [
+    {
+      "name": "preflight",
+      "status": "ok",
+      "startedAt": "2026-07-02T03:18:28.065559Z",
+      "exitCode": 0,
+      "completedAt": "2026-07-02T03:18:56.942202Z"
+    },
+    {
+      "name": "arbitrage",
+      "status": "ok",
+      "startedAt": "2026-07-02T03:18:56.942292Z",
+      "exitCode": 0,
+      "completedAt": "2026-07-02T03:18:57.054721Z"
+    },
+    {
+      "name": "analysis",
+      "status": "ok",
+      "startedAt": "2026-07-02T03:18:57.054759Z",
+      "exitCode": 0,
+      "completedAt": "2026-07-02T03:18:58.500023Z"
+    },
+    {
+      "name": "decision",
+      "status": "ok",
+      "startedAt": "2026-07-02T03:18:58.500084Z",
+      "exitCode": 0,
+      "completedAt": "2026-07-02T03:18:58.558085Z"
+    },
+    {
+      "name": "execution",
+      "status": "ok",
+      "startedAt": "2026-07-02T03:18:58.558131Z",
+      "exitCode": 0,
+      "completedAt": "2026-07-02T03:18:59.246128Z"
+    },
+    {
+      "name": "recovery",
+      "status": "ok",
+      "startedAt": "2026-07-02T03:18:59.246173Z",
+      "exitCode": 0,
+      "completedAt": "2026-07-02T03:19:02.669108Z"
+    },
+    {
+      "name": "observability",
+      "status": "ok",
+      "startedAt": "2026-07-02T03:19:02.669176Z",
+      "exitCode": 0,
+      "completedAt": "2026-07-02T03:19:02.889407Z"
+    }
+  ],
+  "nextRunAt": "2026-07-02T03:24:02Z",
+  "intervalUsed": 300,
+  "errors": [],
+  "summary": "Ciclo 3 completo",
+  "lockHeld": false,
+  "smartLoopPid": 29569,
+  "rateLimited": false
+}

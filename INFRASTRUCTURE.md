@@ -19,6 +19,8 @@
 | Mission Control Worker | — | Docker (RQ) | ✅ |
 | PolyAgents Dashboard | **8888** | Streamlit | Manual |
 | Polymarket Executor | **8789** | Python | Manual |
+| PolyClaw Trading Dashboard | **3333** | Next.js | Manual |
+| CorrectionAgent | — | Python daemon | Manual (1 instância) |
 | Railway CLI | — | CLI (v4.30.5) | ✅ Instalado |
 
 ---
@@ -46,8 +48,9 @@ DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
 ```
 28564452b9b917626d3826260fa50fc0648905bb6e4fff85f4904bb248ee43ff
 ```
-- Configura em: `mission-control/myenv.txt` → `LOCAL_AUTH_TOKEN`
+- Configura em: `mission-control/myenv.txt` → `LOCAL_AUTH_TOKEN` e `NEXT_PUBLIC_LOCAL_AUTH_TOKEN`
 - Usado para login no frontend (Self-Host Mode)
+- Com `NEXT_PUBLIC_LOCAL_AUTH_TOKEN` configurado, o frontend entra automaticamente sem tela de login
 
 ### Telegram Bot Token
 ```
@@ -65,6 +68,7 @@ DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es
 | Gateway UI | `http://127.0.0.1:18789/#token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es` |
 | Web Chat | `http://127.0.0.1:18789/chat?session=agent%3Amain%3Amain&token=DAzqHHHuze75ix8NiwhKjQswnf0-6Bs1uyqBAofa1es` |
 | Mission Control | `http://localhost:3001` |
+| Mission Control (com token na URL) | `http://localhost:3001/?token=28564452b9b917626d3826260fa50fc0648905bb6e4fff85f4904bb248ee43ff` |
 | MC API Docs | `http://localhost:8000/docs` |
 | Dashboard | `http://localhost:8888` |
 
@@ -105,6 +109,56 @@ docker ps
 cd /Users/genautech/clawd
 streamlit run app.py --server.port 8888 --server.headless true
 ```
+
+### 4. CorrectionAgent (auto-correção do dashboard)
+
+Aplica correções aprovadas em `/analysis` e `/error-analysis`. **Deve haver apenas 1 instância.**
+
+```bash
+# Reiniciar com instância única
+pkill -f "scripts/correction_agent.py" 2>/dev/null || true
+sleep 1
+nohup python3 /Users/genautech/clawd/scripts/correction_agent.py >> /tmp/correctionagent.log 2>&1 &
+
+# Ou via start do dashboard (já inclui dedupe):
+bash scripts/start-dashboard-next.sh
+```
+
+Filas: `data/corrections.jsonl` (propostas) → `data/approved_corrections.jsonl` (aprovadas) → CorrectionAgent → `data/executed_corrections.jsonl`
+
+Fixes reais em `scripts/correction_fixes.py` (importado por `correction_agent.py` e `agent_autocorrect.py`).
+
+### 5. Performance do Dashboard (3333)
+
+`next dev` recompila a cada request e é **muito mais lento** que produção local.
+
+```bash
+cd dashboard-next
+npm run build && npm run start -- -p 3333
+```
+
+Otimizações no código:
+- `dashboard-next/src/lib/jsonl.ts` — leitura tail com seek
+- `dashboard-next/src/lib/dataCache.ts` — cache por mtime + TTL
+- `dashboard-next/src/lib/aggregates.ts` — stats compartilhados entre rotas
+- `dashboard-next/src/hooks/useDashboardData.ts` — dedup client-side
+- Cache em `/api/data`, `/api/agents` (5s), `/api/recommendations`, `/api/bots`
+- Home usa `/api/data?type=summary` (payload leve) com poll de 10s
+- Sidebar/RealityPanel poll a cada 30s/10s com dedup via `useDashboardData`
+
+Skill: `skills/dashboard-next/SKILL.md`
+
+### 6. Botões do Dashboard → Agentes
+
+| Botão (UI) | API | Processo |
+|------------|-----|----------|
+| Toggles agentes (home) | `POST /api/agents` | Ver `AGENT_MAP` em `dashboard-next/src/app/api/agents/route.ts` |
+| Smart Loop start/stop | `POST /api/loop/start\|stop` | `smart-loop.sh` |
+| ArbitrageNinja | `POST /api/agents` ArbitrageNinja | `agent_ninja_arbitrage.py --daemon` |
+| Ativar modo real | `POST /api/executor/mode` | config executor |
+| Executar ciclo | `POST /api/agents/run-cycle` | `run-agents.sh smart-cycle` |
+
+`ensure-running.sh` dedupe: CorrectionAgent (1 instância), smart-loop (1 instância).
 
 ---
 
@@ -257,6 +311,7 @@ LOG_LEVEL=INFO
 REQUEST_LOG_SLOW_MS=1000
 AUTH_MODE=local
 LOCAL_AUTH_TOKEN=28564452b9b917626d3826260fa50fc0648905bb6e4fff85f4904bb248ee43ff
+NEXT_PUBLIC_LOCAL_AUTH_TOKEN=28564452b9b917626d3826260fa50fc0648905bb6e4fff85f4904bb248ee43ff
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 

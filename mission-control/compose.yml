@@ -57,6 +57,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
         NEXT_PUBLIC_AUTH_MODE: ${AUTH_MODE}
+        NEXT_PUBLIC_LOCAL_AUTH_TOKEN: ${NEXT_PUBLIC_LOCAL_AUTH_TOKEN:-}
     # Optional, user-managed env file.
     # IMPORTANT: do NOT load `.env.example` here because it contains non-empty
     # placeholder Clerk keys, which can accidentally flip Clerk "on".
@@ -66,6 +67,7 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
       NEXT_PUBLIC_AUTH_MODE: ${AUTH_MODE}
+      NEXT_PUBLIC_LOCAL_AUTH_TOKEN: ${NEXT_PUBLIC_LOCAL_AUTH_TOKEN:-}
     depends_on:
       - backend
     ports:

@@ -111,6 +111,18 @@ ps aux | grep -E "(openclaw|python.*polymarket-exec|python.*http.server)"
 - Monitor recent trades
 - Review recommendations from PolyWhale skill
 
+## Agent Orchestration
+
+### Smart Loop (24/7 trading)
+- Script: `scripts/smart-loop.sh`
+- Start: `bash scripts/start-autoloop.sh`
+- Config: `data/loop-config.json`
+- State: `data/loop-state.json`
+
+### Cursor Supervisor
+- Skill: `skills/agent-loop/SKILL.md`
+- Activate: `/loop Execute skills/agent-loop/SKILL.md em modo dinâmico`
+
 ## Self-Improvement
 
 Agents can modify the project to improve it:
@@ -126,7 +138,7 @@ Agents can modify the project to improve it:
 **You are explicitly tasked with proactively improving Polymarket training.** Read `POLYMARKET_IMPROVEMENTS.md` for detailed instructions.
 
 **What to do:**
-- Review and enhance `skills/polywhale/SKILL.md`, `skills/polymarket-exec/SKILL.md`, `skills/polyclaw/SKILL.md`
+- Review and enhance `skills/polywhale/SKILL.md`, `skills/polymarket-exec/SKILL.md`, `skills/polyclaw/SKILL.md`, `skills/polybot-analyzer/SKILL.md`, `skills/trading-knowledge/index.md`
 - Add better examples, clearer strategies, more detailed instructions
 - Research and incorporate new trading strategies
 - Improve code quality in executor and related scripts

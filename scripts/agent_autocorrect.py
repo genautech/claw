@@ -7,14 +7,20 @@ Commanded by OpenClaw.
 
 import json
 import logging
+import subprocess
+import sys
 from pathlib import Path
 import datetime
+
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.correction_fixes import apply_fix
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("AutoCorrect")
 
-PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 
 EXECS_FILE = DATA_DIR / "executions.jsonl"
@@ -122,27 +128,48 @@ def scan_and_propose():
     if new_proposals > 0:
         write_jsonl(CORRECTIONS_FILE, corrections)
 
+def is_correction_agent_running() -> bool:
+    """True when CorrectionAgent daemon is active — AutoCorrect should not apply fixes directly."""
+    try:
+        result = subprocess.run(
+            ['pgrep', '-f', 'correction_agent.py'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0 and bool(result.stdout.strip())
+    except Exception:
+        return False
+
 def apply_approved():
     """Applies corrections that have been approved by the user."""
     corrections = read_jsonl(CORRECTIONS_FILE)
-    cfg = get_config()
-    applied_any = False
-    
+    changed = False
+
     for c in corrections:
-        if c.get('status') == 'approved':
-            logger.info(f"Applying fix for {c['errorType']}...")
-            if c['errorType'] == 'Size Too Small':
-                cfg['minTrade'] = 5.0
-            
-            # Application successful
+        if c.get('status') != 'approved':
+            continue
+
+        error_type = c.get('errorType', 'Other')
+        fix = c.get('fix', '')
+        logger.info("Applying fix for %s...", error_type)
+
+        result = apply_fix(error_type, fix)
+        c['result_message'] = result.message
+        c['changes'] = result.changes
+
+        if result.status in ('completed', 'partial'):
             c['status'] = 'applied'
             c['appliedAt'] = datetime.datetime.utcnow().isoformat()
-            applied_any = True
-            
-    if applied_any:
-        save_config(cfg)
+            changed = True
+        elif result.status == 'failed':
+            c['status'] = 'failed'
+            c['failedAt'] = datetime.datetime.utcnow().isoformat()
+            changed = True
+
+    if changed:
         write_jsonl(CORRECTIONS_FILE, corrections)
-        logger.info("Configuration updated and corrections marked as applied.")
+        logger.info("Corrections updated after apply_approved().")
 
 def verify_improvements():
     """Checks applied corrections to see if they reduced the error rate."""
@@ -197,15 +224,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--scan", action="store_true", help="Scan for new errors")
     parser.add_argument("--propose", action="store_true", help="Propose fixes (runs with scan)")
-    parser.add_argument("--apply", action="store_true", help="Apply approved fixes")
+    parser.add_argument("--apply", action="store_true", help="Apply approved fixes (only if CorrectionAgent is offline)")
     parser.add_argument("--verify", action="store_true", help="Verify applied fixes")
     args = parser.parse_args()
-    
-    if args.scan or args.propose or not any(vars(args).values()):
+
+    run_scan = args.scan or args.propose or not any(vars(args).values())
+    run_apply = args.apply
+    run_verify = args.verify
+
+    if run_scan:
         scan_and_propose()
-    if args.apply or not any(vars(args).values()):
-        apply_approved()
-    if args.verify or not any(vars(args).values()):
+    if run_apply:
+        if is_correction_agent_running():
+            logger.info("CorrectionAgent is running — skipping direct apply (use approved_corrections.jsonl queue).")
+        else:
+            apply_approved()
+    if run_verify:
         verify_improvements()
 
 if __name__ == "__main__":

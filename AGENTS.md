@@ -15,6 +15,10 @@ Before doing anything else:
 4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
 5. **If working on Polymarket**: Read `POLYMARKET_IMPROVEMENTS.md` for improvement tasks
 6. **If working on infrastructure/gateway/Mission Control**: Read `INFRASTRUCTURE.md` — single source of truth for all tokens, ports, configs, and fix procedures
+7. **If working on trading analysis/markets**: Read `skills/trading-knowledge/index.md` then `docs/trading/frameworks.md`
+8. **If analyzing bot wallets or bot strategies**: Read `skills/polybot-analyzer/SKILL.md`
+9. **If working on agent orchestration/loops**: Read `skills/agent-loop/SKILL.md`
+10. **If working on dashboard UI/APIs/performance**: Read `skills/dashboard-next/SKILL.md` and `INFRASTRUCTURE.md`
 
 Don't ask permission. Just do it.
 

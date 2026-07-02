@@ -1,25 +1,47 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import { HintTooltip } from '@/components/HintTooltip'
+import { useDashboardData } from '@/hooks/useDashboardData'
+
+type ErrorAnalysisData = {
+  analysis?: Array<{ type: string; count: number; trend?: number; impact?: string; severity?: string; recommendedFix?: string }>
+  totalErrors?: number
+}
+
+type CorrectionItem = {
+  id: string
+  status: 'proposed' | 'queued' | 'applied' | 'failed' | 'partial' | 'rejected' | string
+  errorType?: string
+  severity?: string
+  description?: string
+  fix?: string
+}
 
 export default function ErrorAnalysisPage() {
-  const [analysis, setAnalysis] = useState<any>(null)
-  const [corrections, setCorrections] = useState<any[]>([])
-  const [improvements, setImprovements] = useState<any[]>([])
+  const { data: analysis, refresh: refreshAnalysis } = useDashboardData<ErrorAnalysisData>('/api/error-analysis', {
+    intervalMs: 10000,
+    staleTimeMs: 5000,
+  })
+  const { data: correctionsData, refresh: refreshCorrections } = useDashboardData<{ corrections?: CorrectionItem[] }>(
+    '/api/corrections',
+    { intervalMs: 10000, staleTimeMs: 5000 },
+  )
+  const { data: improvementsData } = useDashboardData<{ improvements?: unknown[] }>(
+    '/api/improvements',
+    { intervalMs: 10000, staleTimeMs: 5000 },
+  )
+  const { data: agentsData } = useDashboardData<{ agents?: Record<string, { status?: string }> }>(
+    '/api/agents',
+    { intervalMs: 10000, staleTimeMs: 5000 },
+  )
 
-  const fetchAll = () => {
-    fetch('/api/error-analysis').then(r => r.json()).then(setAnalysis).catch(() => {})
-    fetch('/api/corrections').then(r => r.json()).then(d => setCorrections(d.corrections || [])).catch(() => {})
-    fetch('/api/improvements').then(r => r.json()).then(d => setImprovements(d.improvements || [])).catch(() => {})
-  }
+  const fetchAll = useCallback(() => {
+    refreshAnalysis(true)
+    refreshCorrections(true)
+  }, [refreshAnalysis, refreshCorrections])
 
-  useEffect(() => {
-    fetchAll()
-    const interval = setInterval(fetchAll, 10000)
-    return () => clearInterval(interval)
-  }, [])
-
-  const handleAction = async (id: string, action: string) => {
+  const handleAction = async (id: string, action: 'approve' | 'reject') => {
     await fetch('/api/corrections', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -28,10 +50,19 @@ export default function ErrorAnalysisPage() {
     fetchAll()
   }
 
+  const corrections = correctionsData?.corrections || []
+  const improvements = improvementsData?.improvements || []
+  const agentInfo = agentsData?.agents || {}
+
+  const correctionAgentStatus = agentInfo.CorrectionAgent?.status || 'offline'
+  const autoCorrectStatus = agentInfo.AutoCorrect?.status || 'offline'
+  const agentsHealthy = correctionAgentStatus === 'active' && ['active', 'recent', 'idle'].includes(autoCorrectStatus)
+
   const errors = analysis?.analysis || []
   const topError = errors[0]
-  const pendingCorrections = corrections.filter(c => c.status === 'pending')
-  const appliedCorrections = corrections.filter(c => c.status === 'applied' || c.status === 'verified')
+  const proposedCorrections = corrections.filter((c) => c.status === 'proposed')
+  const queuedCorrections = corrections.filter((c) => c.status === 'queued')
+  const appliedCorrections = corrections.filter((c) => c.status === 'applied' || c.status === 'verified')
 
   return (
     <div className="space-y-5 max-w-[1400px]">
@@ -41,9 +72,12 @@ export default function ErrorAnalysisPage() {
           <p className="text-sm text-muted mt-1">Dashboard de mitigação ativa de erros comandado pelo OpenClaw</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="badge badge-success">● AutoCorrect Agent Live</span>
-          <button onClick={fetchAll} className="px-3 py-1.5 rounded-lg bg-surface-2 text-white text-xs hover:bg-border transition border border-border">
-            Atualizar
+          <span className={`badge ${agentsHealthy ? 'badge-success' : 'badge-warning'}`}>
+            ● CorrectionAgent: {correctionAgentStatus} · AutoCorrect: {autoCorrectStatus}
+          </span>
+          <button onClick={fetchAll} className="px-3 py-1.5 rounded-lg bg-surface-2 text-white text-xs hover:bg-border transition border border-border flex items-center gap-1">
+            🔄 Atualizar análise
+            <HintTooltip hint="Reescaneia executions.jsonl em busca de padrões de erro." />
           </button>
         </div>
       </div>
@@ -52,7 +86,7 @@ export default function ErrorAnalysisPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <KpiCard label="Total de Erros" value={analysis?.totalErrors || '0'} icon="⚠️" color="amber" />
         <KpiCard label="Maior Ofensor" value={topError?.type || 'Nenhum'} sub={`${topError?.count || 0} ocorrências`} icon="🔥" color="red" />
-        <KpiCard label="Fixes Pendentes" value={pendingCorrections.length.toString()} icon="🛠️" color="blue" />
+        <KpiCard label="Fixes Pendentes" value={proposedCorrections.length.toString()} icon="🛠️" color="blue" />
         <KpiCard label="Melhorias Aplicadas" value={appliedCorrections.length.toString()} icon="✅" color="green" />
       </div>
 
@@ -131,17 +165,32 @@ export default function ErrorAnalysisPage() {
           <div className="glass-card p-5">
             <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
               🤖 AutoCorrect Agent
-              {pendingCorrections.length > 0 && <span className="badge badge-warning">{pendingCorrections.length} Pendentes</span>}
+              {proposedCorrections.length > 0 && <span className="badge badge-warning">{proposedCorrections.length} Para aprovar</span>}
+              {queuedCorrections.length > 0 && <span className="badge badge-info">{queuedCorrections.length} Na fila</span>}
             </h3>
             
             <div className="space-y-3 mt-4">
-              {pendingCorrections.length === 0 && (
+              {proposedCorrections.length === 0 && queuedCorrections.length === 0 && (
                 <div className="text-center text-muted py-6 text-sm">
                   O agente não encontrou novas correções para propor no momento.
                 </div>
               )}
+
+              {queuedCorrections.map((corr) => (
+                <div key={corr.id} className="p-3 rounded-lg border border-accent/30 bg-accent/5">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-xs font-bold text-white">{corr.errorType}</span>
+                    <span className="badge badge-info">Na fila</span>
+                  </div>
+                  <p className="text-[11px] text-muted mb-2">{corr.description}</p>
+                  <div className="text-[11px] font-mono text-accent bg-accent/10 p-2 rounded border border-accent/20">
+                    Fix: {corr.fix}
+                  </div>
+                  <p className="text-[10px] text-muted mt-2">CorrectionAgent aplicará em breve.</p>
+                </div>
+              ))}
               
-              {pendingCorrections.map((corr: any) => (
+              {proposedCorrections.map((corr) => (
                 <div key={corr.id} className="p-3 rounded-lg border border-warning/30 bg-warning/5">
                   <div className="flex justify-between items-start mb-2">
                     <span className="text-xs font-bold text-white">{corr.errorType}</span>
@@ -152,11 +201,13 @@ export default function ErrorAnalysisPage() {
                     Fix: {corr.fix}
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => handleAction(corr.id, 'approve')} className="flex-1 py-1.5 rounded-lg bg-green-500/20 text-green-400 text-xs font-semibold hover:bg-green-500/30 transition border border-green-500/30">
-                      ✓ Aprovar e Executar
+                    <button onClick={() => handleAction(corr.id, 'approve')} className="flex-1 py-1.5 rounded-lg bg-green-500/20 text-green-400 text-xs font-semibold hover:bg-green-500/30 transition border border-green-500/30 flex items-center justify-center gap-1">
+                      ✓ Aprovar correção
+                      <HintTooltip hint="AutoCorrect propõe fix; CorrectionAgent aplica após aprovação." />
                     </button>
-                    <button onClick={() => handleAction(corr.id, 'reject')} className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-400 text-xs font-semibold hover:bg-red-500/30 transition border border-red-500/30">
+                    <button onClick={() => handleAction(corr.id, 'reject')} className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-400 text-xs font-semibold hover:bg-red-500/30 transition border border-red-500/30 flex items-center gap-1" title="Rejeitar correção">
                       ✗
+                      <HintTooltip hint="Descarta sugestão de fix — não altera código nem config." />
                     </button>
                   </div>
                 </div>
@@ -168,10 +219,12 @@ export default function ErrorAnalysisPage() {
             <h3 className="text-xs font-semibold text-white mb-2 uppercase tracking-wide">Status do Agente</h3>
             <ul className="space-y-2">
               <li className="text-[11px] text-muted flex items-start gap-2">
-                <span className="text-green-400">●</span> <b>Monitoramento:</b> Ativo (logs/executions.jsonl)
+                <span className={correctionAgentStatus === 'active' ? 'text-green-400' : 'text-amber-400'}>●</span>
+                <b>CorrectionAgent:</b> {correctionAgentStatus}
               </li>
               <li className="text-[11px] text-muted flex items-start gap-2">
-                <span className="text-green-400">●</span> <b>Análise:</b> Padrões detectados
+                <span className={['active', 'recent'].includes(autoCorrectStatus) ? 'text-green-400' : 'text-amber-400'}>●</span>
+                <b>AutoCorrect:</b> {autoCorrectStatus}
               </li>
               <li className="text-[11px] text-muted flex items-start gap-2">
                 <span className="text-blue-400">●</span> <b>Deploy:</b> Aguardando aprovação humana para tuning

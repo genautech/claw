@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
@@ -11,6 +11,19 @@ interface CostData {
   totalApiCost: number
   totalTokens: number
   costPerTrade: number
+  gasFees?: number
+  _estimated?: boolean
+  lastCollectedAt?: string | null
+  agentBreakdown?: {
+    agent: string
+    model: string
+    source: string
+    tokensIn: number
+    tokensOut: number
+    tokensUsed: number
+    costUsd: number
+    calls: number
+  }[]
   tokenBreakdown: {
     model: string
     calls: number
@@ -46,9 +59,15 @@ const TIER_COLORS: Record<string, string> = {
 export default function CostsPage() {
   const [costs, setCosts] = useState<CostData | null>(null)
 
-  useEffect(() => {
-    fetch('/api/data?type=costs').then(r => r.json()).then(setCosts)
+  const loadCosts = useCallback(() => {
+    fetch('/api/costs').then(r => r.json()).then(setCosts).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    loadCosts()
+    const id = setInterval(loadCosts, 15000)
+    return () => clearInterval(id)
+  }, [loadCosts])
 
   const totalCost = costs ? costs.tradingFees + costs.totalApiCost : 0
   const dailyTotal = costs?.dailyCosts?.map(d => ({
@@ -110,7 +129,38 @@ export default function CostsPage() {
           </p>
         </div>
         <div className="badge badge-warning">⚠️ Custo é Inimigo do Lucro</div>
+        {costs?._estimated && (
+          <div className="badge badge-danger">Dados estimados — rode collect-token-usage</div>
+        )}
+        {costs?.lastCollectedAt && !costs._estimated && (
+          <div className="text-xs text-muted">Última coleta: {new Date(costs.lastCollectedAt).toLocaleString('pt-BR')}</div>
+        )}
       </div>
+
+      {costs?.agentBreakdown && costs.agentBreakdown.length > 0 && (
+        <div className="glass-card p-5">
+          <h3 className="text-sm font-semibold text-white mb-3">Custo por Agente</h3>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Agente</th><th>Modelo</th><th>Fonte</th><th>Tokens</th><th>USD</th><th>Chamadas</th>
+              </tr>
+            </thead>
+            <tbody>
+              {costs.agentBreakdown.map((row, i) => (
+                <tr key={i}>
+                  <td className="text-xs">{row.agent}</td>
+                  <td className="text-xs font-mono">{row.model}</td>
+                  <td className="text-xs text-muted">{row.source}</td>
+                  <td className="font-mono text-xs">{formatTokens(row.tokensUsed)}</td>
+                  <td className="font-mono text-xs text-accent">${row.costUsd.toFixed(4)}</td>
+                  <td className="font-mono text-xs">{row.calls}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Cost KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">

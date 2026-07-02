@@ -1,37 +1,19 @@
 import { NextResponse } from 'next/server'
-import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
+import { getCached } from '@/lib/dataCache'
+import { readJsonlTail } from '@/lib/jsonl'
 
-const PROJECT_ROOT = join(process.cwd(), '..')
-const NINJA_LOG = join(PROJECT_ROOT, 'data', 'ninja_trades.jsonl')
+const NINJA_LOG = join(process.cwd(), '..', 'data', 'ninja_trades.jsonl')
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const limit = parseInt(searchParams.get('limit') || '100')
+  const limit = Math.min(parseInt(searchParams.get('limit') || '100', 10), 100)
 
-  if (!existsSync(NINJA_LOG)) {
-    return NextResponse.json([])
-  }
+  const trades = getCached(
+    `ninja-tail-${limit}`,
+    () => readJsonlTail(NINJA_LOG, limit).reverse(),
+    { filepaths: [NINJA_LOG], ttlMs: 2000 },
+  )
 
-  try {
-    const raw = readFileSync(NINJA_LOG, 'utf-8')
-    const trades = raw
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => {
-        try {
-          return JSON.parse(line)
-        } catch {
-          return null
-        }
-      })
-      .filter(Boolean)
-      .reverse()
-      .slice(0, limit)
-
-    return NextResponse.json(trades)
-  } catch (e) {
-    return NextResponse.json({ error: 'Failed to read ninja trades' }, { status: 500 })
-  }
+  return NextResponse.json(trades)
 }

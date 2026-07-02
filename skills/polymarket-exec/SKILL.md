@@ -1,10 +1,26 @@
 ---
 name: polymarket-exec
 description: Direct Polymarket executor - places trades on CLOB/Gamma without PolyClaw dashboard dependency
-version: 1.0.0
+version: 1.1.0
 author: genautech
 tags: [trading, polymarket, execution, clob]
 ---
+
+## ✅ Status: OPERACIONAL (2026-07-01)
+
+**SDK Atual**: `py_clob_client_v2` v1.0.1 — instalado e funcionando.
+
+O `py-clob-client` original foi **arquivado em 25/05/2026** (read-only). O V2 usa os novos contratos:
+- Exchange: `0xE111180000d2663C0091e4f400237545B87B996B`
+- NegRiskExchange: `0xe2222d279d744050d28e00520010520000310F59`
+
+Migração feita em `references/polyclaw-chainstack/lib/clob_client.py`.
+
+**Confirmado funcionando (2026-07-01)**:
+- ✅ Autenticação API (api_key/secret/passphrase)
+- ✅ Balance check (~$7.90 USDC em proxy `0xacbad6b3...`)
+- ✅ POST /order → ordem executada, status `matched`
+- ✅ Ordem GTC e FOK via `create_and_post_order`
 
 # Polymarket Executor - Direct Trading
 
@@ -155,6 +171,14 @@ bash scripts/install-polymarket-hooks-cron.sh
 - **If health fails**:
   - Ensure server is running: `python scripts/polymarket-exec.py --serve`
   - Confirm port 8789 is free and bound to 127.0.0.1
+
+## Bot Analysis Calibration
+
+Risk parameters (`minEdge`, Kelly fraction) can be informed by `data/bot_analyses.jsonl` from Polybot Analyzer. That file is separate from PolyWhale `recommendations.jsonl`. Apply config updates only with:
+
+```bash
+python3 scripts/agent_polybot_analyzer.py --all --apply-config
+```
 
 ## Safety Rules
 

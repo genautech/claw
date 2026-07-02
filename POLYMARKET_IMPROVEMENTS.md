@@ -1,5 +1,15 @@
 # Polymarket Training Improvements - Agent Instructions
 
+## ✅ RESOLVIDO (2026-07-01)
+
+### Migração para py_clob_client_v2
+O `py-clob-client` v0.34.6 foi arquivado em 25/05/2026 (incompatível com novos contratos).
+Migração feita para `py_clob_client_v2` v1.0.1 — **ordem de $5 executada com sucesso** (status `matched`).
+
+- SDK novo: `pip install py_clob_client_v2`
+- Novos contratos ativos: `0xE111...` (Exchange), `0xe2222...` (NegRiskExchange)
+- Arquivo atualizado: `references/polyclaw-chainstack/lib/clob_client.py`
+
 ## Your Mission
 
 You are tasked with **proactively improving** the Polymarket trading capabilities of this system. Don't wait to be asked — take initiative and make improvements.
@@ -7,7 +17,7 @@ You are tasked with **proactively improving** the Polymarket trading capabilitie
 ## What to Improve
 
 ### 1. Skills Documentation
-- Read `skills/polywhale/SKILL.md`, `skills/polymarket-exec/SKILL.md`, `skills/polyclaw/SKILL.md`
+- Read `skills/polywhale/SKILL.md`, `skills/polymarket-exec/SKILL.md`, `skills/polyclaw/SKILL.md`, `skills/polybot-analyzer/SKILL.md`, `skills/trading-knowledge/index.md`
 - Add better examples, clearer instructions, more detailed strategies
 - Update with learnings from actual trades
 - Fix any unclear or incomplete sections
@@ -27,6 +37,8 @@ You are tasked with **proactively improving** the Polymarket trading capabilitie
 ### 4. Integration
 - Ensure PolyWhale recommendations flow correctly to executor
 - Improve data flow: recommendations.jsonl → executor → executions.jsonl
+- Run Polybot Analyzer on watchlist: `python3 scripts/agent_polybot_analyzer.py --all`
+- Calibrate `data/dashboard-config.json` from bot analyses (`--apply-config` flag)
 - Add monitoring and alerting for trade execution
 
 ## How to Do This

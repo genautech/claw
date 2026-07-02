@@ -118,6 +118,16 @@ When you make a trading decision, write it to `data/recommendations.jsonl`:
 
 The Polymarket Executor can process these recommendations automatically when authorized.
 
+## Competitor Intelligence
+
+Before tuning edge thresholds, run Polybot Analyzer on competitor wallets:
+
+```bash
+python3 scripts/agent_polybot_analyzer.py --all
+```
+
+Use `params.suggested_min_edge` from `data/bot_analyses.jsonl` to calibrate this skill's minimum edge — do not write bot analysis into `recommendations.jsonl`.
+
 ## Constraints
 
 - Never trade with >20% of capital

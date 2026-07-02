@@ -33,7 +33,7 @@ echo ""
 
 # Workspace Skills
 echo "3. Skills do workspace:"
-for skill in polywhale latencyninja configdash; do
+for skill in polywhale latencyninja configdash polymarket-exec polybot-analyzer trading-knowledge; do
   if [ -f "$HOME/.openclaw/workspace/skills/$skill/SKILL.md" ]; then
     echo -e "   ${GREEN}✅${NC} $skill"
   else
@@ -47,10 +47,16 @@ echo "4. Canais:"
 openclaw channels status 2>/dev/null | grep -E "Telegram|WhatsApp|Discord" | sed 's/^/   /' || echo "   Não foi possível verificar"
 echo ""
 
-# Dashboard
-echo "5. Dashboard:"
+# Dashboards
+echo "5. Dashboards:"
+if lsof -Pi :3333 -sTCP:LISTEN -t >/dev/null 2>&1; then
+  echo -e "   ${GREEN}✅${NC} PolyClaw Trading Dashboard (porta 3333)"
+  echo "   URL: http://127.0.0.1:3333"
+else
+  echo -e "   ${YELLOW}⚠️${NC}  Trading Dashboard parado (bash scripts/start-dashboard-next.sh)"
+fi
 if lsof -Pi :8888 -sTCP:LISTEN -t >/dev/null 2>&1; then
-  echo -e "   ${GREEN}✅${NC} Rodando na porta 8888"
+  echo -e "   ${GREEN}✅${NC} Clawd Monitoring (porta 8888)"
   TOKEN=$(openclaw config get gateway.auth.token 2>/dev/null | grep -v "Doctor" | grep -v "^│" | grep -v "^├" | grep -v "^└" | tr -d ' "' || echo "")
   if [ -n "$TOKEN" ]; then
     echo "   URL: http://127.0.0.1:8888/#token=$TOKEN"
@@ -58,7 +64,17 @@ if lsof -Pi :8888 -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo "   URL: http://127.0.0.1:8888"
   fi
 else
-  echo -e "   ${YELLOW}⚠️${NC}  Não está rodando (execute: bash scripts/start-dashboard.sh)"
+  echo -e "   ${YELLOW}⚠️${NC}  Monitoring parado (bash scripts/start-dashboard.sh)"
+fi
+echo ""
+
+# Executor
+echo "6. Polymarket Executor:"
+if lsof -Pi :8789 -sTCP:LISTEN -t >/dev/null 2>&1; then
+  echo -e "   ${GREEN}✅${NC} Rodando na porta 8789"
+  echo "   Health: http://127.0.0.1:8789/health"
+else
+  echo -e "   ${YELLOW}⚠️${NC}  Parado (bash scripts/start-executor.sh)"
 fi
 echo ""
 

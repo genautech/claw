@@ -9,10 +9,21 @@ Skills define *how* tools work. This file is for *your* specifics — the stuff 
 - **Web Chat:** http://127.0.0.1:18789/chat?session=agent%3Amain%3Amain
 - **Control UI:** http://127.0.0.1:18789 (with token in URL)
 
-### Monitoring Dashboard
+### PolyClaw Trading Dashboard (principal)
+- **URL:** http://127.0.0.1:3333
+- **Start:** `bash scripts/start-dashboard-next.sh`
+- **Prod local (perf):** `cd dashboard-next && npm run build && npm run start -- -p 3333`
+- **Skill:** `skills/dashboard-next/SKILL.md`
+
+### Clawd Monitoring Dashboard (legado)
 - **URL:** http://127.0.0.1:8787
 - **With auth:** http://127.0.0.1:8787/#token=(gateway token)
 - **Start:** `bash scripts/start-dashboard.sh`
+
+### CorrectionAgent
+- **Log:** `/tmp/correctionagent.log`
+- **Fila:** `data/approved_corrections.jsonl` → `data/executed_corrections.jsonl`
+- **Start:** incluído em `start-dashboard-next.sh` (dedupe automático)
 
 ### Polymarket Executor
 - **URL:** http://127.0.0.1:8789

@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { HintTooltip } from '@/components/HintTooltip'
 import {
   BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
@@ -8,35 +9,75 @@ import {
 
 export default function TradesPage() {
   const [tab, setTab] = useState<'recs' | 'execs' | 'sims'>('execs')
-  const [execData, setExecData] = useState<any>(null)
-  const [recData, setRecData] = useState<any>(null)
-  const [simData, setSimData] = useState<any>(null)
+  const [execData, setExecData] = useState<Record<string, unknown> | null>(null)
+  const [recData, setRecData] = useState<Record<string, unknown> | null>(null)
+  const [simData, setSimData] = useState<Record<string, unknown> | null>(null)
+
+  const loadTab = useCallback(async (target: 'recs' | 'execs' | 'sims') => {
+    if (target === 'execs' && !execData) {
+      const data = await fetch('/api/data?type=executions').then((r) => r.json()).catch(() => null)
+      if (data) setExecData(data)
+    }
+    if (target === 'recs' && !recData) {
+      const data = await fetch('/api/data?type=recommendations').then((r) => r.json()).catch(() => null)
+      if (data) setRecData(data)
+    }
+    if (target === 'sims' && !simData) {
+      const data = await fetch('/api/data?type=simulated').then((r) => r.json()).catch(() => null)
+      if (data) setSimData(data)
+    }
+  }, [execData, recData, simData])
 
   useEffect(() => {
-    fetch('/api/data?type=executions').then(r => r.json()).then(setExecData)
-    fetch('/api/data?type=recommendations').then(r => r.json()).then(setRecData)
-    fetch('/api/data?type=simulated').then(r => r.json()).then(setSimData)
-  }, [])
+    loadTab('execs')
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      if (tab === 'execs') {
+        fetch('/api/data?type=executions').then((r) => r.json()).then(setExecData).catch(() => {})
+      } else if (tab === 'recs') {
+        fetch('/api/data?type=recommendations').then((r) => r.json()).then(setRecData).catch(() => {})
+      } else {
+        fetch('/api/data?type=simulated').then((r) => r.json()).then(setSimData).catch(() => {})
+      }
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [tab, loadTab])
+
+  useEffect(() => {
+    loadTab(tab)
+  }, [tab, loadTab])
+
+  const execStats = execData?.stats as Record<string, unknown> | undefined
+  const recStats = recData?.stats as Record<string, unknown> | undefined
+  const execTotal = Number(execStats?.total || 0)
+  const execSuccess = Number(execStats?.success || 0)
 
   const tabs = [
-    { key: 'execs', label: '⚡ Execuções', count: execData?.stats?.total || 0 },
-    { key: 'recs', label: '🎯 Recomendações', count: recData?.stats?.total || 0 },
-    { key: 'sims', label: '🧪 Simulações', count: simData?.total || 0 },
+    { key: 'execs' as const, label: '⚡ Execuções', count: execTotal, hint: 'Ordens reais ou simuladas enviadas ao Polymarket pelo Executor.' },
+    { key: 'recs' as const, label: '🎯 Recomendações', count: Number(recStats?.total || 0), hint: 'Sugestões geradas pelo PolyWhale antes da sua aprovação.' },
+    { key: 'sims' as const, label: '🧪 Simulações', count: Number(simData?.total || 0), hint: 'Paper trades do PolyClaw — nunca viram ordem real.' },
   ]
 
-  // Chart data
-  const decisionPieData = recData?.stats?.decisions
-    ? Object.entries(recData.stats.decisions).map(([name, value]) => ({ name, value }))
-    : []
+  const decisionPieData = useMemo(() => {
+    const decisions = recStats?.decisions as Record<string, number> | undefined
+    if (!decisions) return []
+    return Object.entries(decisions).map(([name, value]) => ({ name, value }))
+  }, [recStats])
 
-  const hourlyData = execData?.stats?.hourly
-    ? Object.entries(execData.stats.hourly).map(([hour, count]) => ({
-        hour: `${hour}h`,
-        trades: count,
-      })).sort((a, b) => parseInt(a.hour) - parseInt(b.hour))
-    : []
+  const hourlyData = useMemo(() => {
+    const hourly = execStats?.hourly as Record<string, number> | undefined
+    if (!hourly) return []
+    return Object.entries(hourly).map(([hour, count]) => ({
+      hour: `${hour}h`,
+      trades: count,
+    })).sort((a, b) => parseInt(a.hour) - parseInt(b.hour))
+  }, [execStats])
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#ec4899']
+
+  const execDataArray = (execData?.data as unknown[] | undefined) || []
+  const recDataArray = (recData?.data as unknown[] | undefined) || []
+  const simDataArray = (simData?.data as unknown[] | undefined) || []
 
   return (
     <div className="space-y-6 max-w-[1400px]">
@@ -56,25 +97,25 @@ export default function TradesPage() {
               <svg className="w-32 h-32 -rotate-90" viewBox="0 0 120 120">
                 <circle cx="60" cy="60" r="50" fill="none" stroke="#1e2d3d" strokeWidth="10" />
                 <circle cx="60" cy="60" r="50" fill="none" stroke="#10b981" strokeWidth="10"
-                  strokeDasharray={`${((execData?.stats?.success || 0) / Math.max(execData?.stats?.total || 1, 1)) * 314} 314`}
+                  strokeDasharray={`${(execSuccess / Math.max(execTotal, 1)) * 314} 314`}
                   strokeLinecap="round" />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-2xl font-bold text-white">
-                  {execData?.stats?.total ? Math.round((execData.stats.success / execData.stats.total) * 100) : 0}%
+                  {execTotal ? Math.round((execSuccess / execTotal) * 100) : 0}%
                 </span>
-                <span className="text-[10px] text-muted">{execData?.stats?.success || 0}/{execData?.stats?.total || 0}</span>
+                <span className="text-[10px] text-muted">{execSuccess}/{execTotal}</span>
               </div>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2 text-center">
             <div>
               <div className="text-xs text-muted">Live</div>
-              <div className="text-sm font-semibold text-white">{execData?.stats?.live || 0}</div>
+              <div className="text-sm font-semibold text-white">{Number(execStats?.live || 0)}</div>
             </div>
             <div>
               <div className="text-xs text-muted">Dry Run</div>
-              <div className="text-sm font-semibold text-white">{execData?.stats?.dryRun || 0}</div>
+              <div className="text-sm font-semibold text-white">{Number(execStats?.dryRun || 0)}</div>
             </div>
           </div>
         </div>
@@ -148,7 +189,7 @@ export default function TradesPage() {
               </tr>
             </thead>
             <tbody>
-              {(execData?.data || []).slice().reverse().map((e: any, i: number) => (
+              {(execDataArray || []).slice().reverse().map((e: any, i: number) => (
                 <tr key={i}>
                   <td className="font-mono text-xs text-muted whitespace-nowrap">
                     {new Date(e.timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -194,7 +235,7 @@ export default function TradesPage() {
               </tr>
             </thead>
             <tbody>
-              {(recData?.data || []).slice().reverse().map((r: any, i: number) => (
+              {(recDataArray || []).slice().reverse().map((r: any, i: number) => (
                 <tr key={i}>
                   <td className="font-mono text-xs text-muted whitespace-nowrap">
                     {new Date(r.timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -240,7 +281,7 @@ export default function TradesPage() {
               </tr>
             </thead>
             <tbody>
-              {(simData?.data || []).slice().reverse().map((s: any, i: number) => (
+              {(simDataArray || []).slice().reverse().map((s: any, i: number) => (
                 <tr key={i}>
                   <td className="font-mono text-xs text-muted whitespace-nowrap">
                     {new Date(s.timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}

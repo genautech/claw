@@ -19,6 +19,7 @@ err()  { echo -e "${RED}[✗]${NC} $1"; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 DASHBOARD_PORT=8888
+TRADING_DASHBOARD_PORT=3333
 
 echo "🔍 Verificando serviços..."
 echo ""
@@ -53,8 +54,24 @@ else
 fi
 echo ""
 
-# 2. Dashboard
-echo "2. Clawd Dashboard..."
+# 2. PolyClaw Trading Dashboard (Next.js)
+echo "2. PolyClaw Trading Dashboard..."
+if lsof -Pi :$TRADING_DASHBOARD_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
+  log "Trading Dashboard rodando (porta $TRADING_DASHBOARD_PORT)"
+else
+  warn "Trading Dashboard não está rodando, iniciando..."
+  bash "$PROJECT_DIR/scripts/start-dashboard-next.sh" >/dev/null 2>&1 || true
+  sleep 3
+  if lsof -Pi :$TRADING_DASHBOARD_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
+    log "Trading Dashboard iniciado (porta $TRADING_DASHBOARD_PORT)"
+  else
+    err "Falha ao iniciar Trading Dashboard"
+  fi
+fi
+echo ""
+
+# 3. Clawd Monitoring Dashboard (static)
+echo "3. Clawd Monitoring Dashboard..."
 if lsof -Pi :$DASHBOARD_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
   log "Dashboard rodando (porta $DASHBOARD_PORT)"
 else
@@ -66,6 +83,31 @@ else
     log "Dashboard iniciado (porta $DASHBOARD_PORT)"
   else
     err "Falha ao iniciar dashboard"
+  fi
+fi
+echo ""
+
+# 5. CorrectionAgent (aplica correções aprovadas no dashboard)
+echo "5. CorrectionAgent..."
+if pgrep -f "scripts/correction_agent.py" >/dev/null 2>&1; then
+  COUNT=$(pgrep -f "scripts/correction_agent.py" | wc -l | tr -d ' ')
+  if [[ "$COUNT" -gt 1 ]]; then
+    warn "Múltiplas instâncias ($COUNT), reiniciando..."
+    pkill -f "scripts/correction_agent.py" 2>/dev/null || true
+    sleep 1
+  else
+    log "CorrectionAgent rodando"
+  fi
+fi
+if ! pgrep -f "scripts/correction_agent.py" >/dev/null 2>&1; then
+  warn "CorrectionAgent não está rodando, iniciando..."
+  nohup python3 "$PROJECT_DIR/scripts/correction_agent.py" >> /tmp/correctionagent.log 2>&1 &
+  sleep 2
+  if pgrep -f "scripts/correction_agent.py" >/dev/null 2>&1; then
+    log "CorrectionAgent iniciado"
+    echo "   Log: /tmp/correctionagent.log"
+  else
+    err "Falha ao iniciar CorrectionAgent"
   fi
 fi
 echo ""
@@ -85,9 +127,18 @@ else
   err "OpenClaw Gateway: ❌ Parado"
 fi
 
-# Dashboard
+# Trading Dashboard (principal)
+if lsof -Pi :$TRADING_DASHBOARD_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
+  log "PolyClaw Trading Dashboard: ✅ Rodando"
+  echo "   URL: http://127.0.0.1:$TRADING_DASHBOARD_PORT"
+else
+  err "PolyClaw Trading Dashboard: ❌ Parado"
+  echo "   Execute: bash scripts/start-dashboard-next.sh"
+fi
+
+# Monitoring Dashboard
 if lsof -Pi :$DASHBOARD_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
-  log "Clawd Dashboard: ✅ Rodando"
+  log "Clawd Monitoring Dashboard: ✅ Rodando"
   TOKEN=$(openclaw config get gateway.auth.token 2>/dev/null | grep -v "Doctor" | grep -v "^│" | grep -v "^├" | grep -v "^└" | tr -d ' "' || echo "")
   if [[ -n "$TOKEN" ]]; then
     echo "   URL: http://127.0.0.1:$DASHBOARD_PORT/#token=$TOKEN"
@@ -95,7 +146,7 @@ if lsof -Pi :$DASHBOARD_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo "   URL: http://127.0.0.1:$DASHBOARD_PORT"
   fi
 else
-  err "Clawd Dashboard: ❌ Parado"
+  err "Clawd Monitoring Dashboard: ❌ Parado"
 fi
 
 # Executor
@@ -104,9 +155,49 @@ if lsof -Pi :8789 -sTCP:LISTEN -t >/dev/null 2>&1; then
   echo "   URL: http://127.0.0.1:8789"
   echo "   Health: http://127.0.0.1:8789/health"
 else
-  echo -e "${YELLOW}⚠️${NC}  Polymarket Executor: ❌ Parado"
-  echo "   Execute: bash scripts/start-executor.sh"
-  echo "   ${YELLOW}   Nota:${NC} Requer POLYMARKET_PK e POLYMARKET_ADDRESS"
+  warn "Polymarket Executor não está rodando, iniciando..."
+  bash "$PROJECT_DIR/scripts/start-executor.sh" >/dev/null 2>&1 || true
+  sleep 3
+  if lsof -Pi :8789 -sTCP:LISTEN -t >/dev/null 2>&1; then
+    log "Polymarket Executor iniciado (porta 8789)"
+  else
+    echo -e "${YELLOW}⚠️${NC}  Polymarket Executor: ❌ Parado"
+    echo "   Execute: bash scripts/start-executor.sh"
+  fi
+fi
+echo ""
+
+# 4. Smart Loop (optional — intelligent agent cycles)
+echo "4. Smart Loop (ciclo inteligente)..."
+SMART_LOOP_COUNT=$(pgrep -f "scripts/smart-loop.sh" 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$SMART_LOOP_COUNT" -gt 1 ]]; then
+  warn "Múltiplas instâncias do Smart Loop ($SMART_LOOP_COUNT), reiniciando..."
+  pkill -f "scripts/smart-loop.sh" 2>/dev/null || true
+  sleep 1
+  bash "$PROJECT_DIR/scripts/start-autoloop.sh" >/dev/null 2>&1 || true
+  sleep 2
+fi
+if pgrep -f "scripts/smart-loop.sh" >/dev/null 2>&1; then
+  log "Smart Loop rodando"
+  echo "   Log: /tmp/smart-loop.log"
+  echo "   Estado: data/loop-state.json"
+elif pgrep -f "scripts/autoloop.sh" >/dev/null 2>&1; then
+  log "Autoloop legado rodando"
+  echo "   Log: /tmp/autoloop.log"
+else
+  warn "Smart Loop não está rodando (opcional)"
+  echo "   Execute: bash scripts/start-autoloop.sh"
+fi
+echo ""
+
+# Mission Control
+if lsof -Pi :3001 -sTCP:LISTEN -t >/dev/null 2>&1; then
+  log "Mission Control: ✅ Rodando"
+  echo "   URL: http://localhost:3001"
+  echo "   API: http://localhost:8000/docs"
+else
+  echo -e "${YELLOW}⚠️${NC}  Mission Control: ❌ Parado"
+  echo "   Execute: bash scripts/start-mission-control.sh"
 fi
 
 echo ""

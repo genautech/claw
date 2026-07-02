@@ -104,6 +104,71 @@ def _load_risk_config() -> dict:
         pass
     return {}
 
+
+def _load_status_map() -> dict:
+    """Load recommendation approval status from dashboard."""
+    try:
+        path = PROJECT_ROOT / "data" / "recommendation-status.json"
+        if path.exists():
+            return json.loads(path.read_text())
+    except Exception:
+        pass
+    return {}
+
+
+def _rec_id(rec: dict) -> str:
+    return str(rec.get("id") or rec.get("market_id") or rec.get("timestamp") or "")
+
+
+def _confidence_rank(level: str) -> int:
+    return {"LOW": 1, "MEDIUM": 2, "HIGH": 3}.get(level.upper(), 0)
+
+
+def _should_execute_rec(rec: dict, status_map: dict, risk_cfg: dict) -> tuple[bool, str]:
+    """Return whether a recommendation may be executed and why."""
+    rid = _rec_id(rec)
+    if not rid:
+        return False, "missing id"
+
+    entry = status_map.get(rid, {})
+    status = entry.get("status", "pending")
+    if status == "rejected":
+        return False, "rejected"
+    if status == "accepted":
+        return True, "accepted"
+
+    if risk_cfg.get("autoExecute"):
+        if rec.get("source") != "polywhale_v2":
+            return False, "legacy_or_unverified_source"
+        min_conf = str(risk_cfg.get("minConfidence", "MEDIUM")).upper()
+        min_edge = float(risk_cfg.get("minEdge", 5))
+        conf = str(rec.get("confidence", "LOW")).upper()
+        edge = float(rec.get("edge", 0) or 0) * 100
+        if _confidence_rank(conf) >= _confidence_rank(min_conf) and edge >= min_edge:
+            return True, "autoExecute"
+        return False, "autoExecute filters not met"
+
+    return False, "pending approval"
+
+
+def _effective_max_trade_usd(risk_cfg: dict) -> float:
+    """Dashboard config is the operational source; env MAX_TRADE_USD is fallback only."""
+    if risk_cfg.get("maxTrade") is not None:
+        return float(risk_cfg["maxTrade"])
+    return MAX_TRADE_USD
+
+
+def _fetch_usdc_balance() -> float:
+    """Sync USDC balance for reserve-floor checks."""
+    try:
+        wrapper = get_clob_client()
+        from py_clob_client.clob_types import BalanceAllowanceParams
+        res = wrapper.client.get_balance_allowance(BalanceAllowanceParams(asset_type="COLLATERAL"))
+        return float(res.get("balance", "0")) / 10**6
+    except Exception as e:
+        logger.warning(f"Balance fetch for validation failed: {e}")
+        return 0.0
+
 # Global clients
 redis_client: Optional[aioredis.Redis] = None
 
@@ -241,6 +306,128 @@ def log_trade(action: str, details: dict, success: bool, error: Optional[str] = 
 
 # Obvious test / invalid market ID patterns (Gamma API returns 422 for these)
 _INVALID_MARKET_ID_PATTERNS = ("0x12345", "0x123", "0x0", "test", "unknown")
+CLOB_MIN_PRICE = 0.01
+CLOB_MAX_PRICE = 0.99
+CLOB_MIN_SHARES = 5
+
+
+def _clamp_clob_price(price: float) -> float:
+    """Normalize price to Polymarket CLOB tick bounds."""
+    return max(CLOB_MIN_PRICE, min(CLOB_MAX_PRICE, price))
+
+
+def _min_usd_for_shares(price: float, shares: int = CLOB_MIN_SHARES) -> float:
+    if price <= 0:
+        return 0.0
+    return round(shares * price, 4)
+
+
+def _max_order_usd(risk_cfg: dict) -> tuple[float, Optional[str]]:
+    """Max USD for one order given maxTrade, reserve floor, and daily exposure."""
+    effective_max = _effective_max_trade_usd(risk_cfg)
+    reserve = float(risk_cfg.get("reserveFloor", RESERVE_FLOOR_USD))
+    max_daily = float(
+        risk_cfg.get("maxDailyExposure", risk_cfg.get("maxDaily", MAX_DAILY_EXPOSURE_USD))
+    )
+
+    global daily_exposure_usd, daily_exposure_date
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    if daily_exposure_date != today:
+        daily_exposure_usd = 0.0
+        daily_exposure_date = today
+
+    daily_remaining = max(0.0, max_daily - daily_exposure_usd)
+    cap = min(effective_max, daily_remaining)
+
+    balance = _fetch_usdc_balance()
+    if balance > 0:
+        reserve_cap = max(0.0, balance - reserve)
+        cap = min(cap, reserve_cap)
+
+    if cap <= 0:
+        if balance > 0:
+            return 0.0, (
+                f"Sem saldo para ordem após reserva ${reserve:.2f} "
+                f"(saldo ${balance:.2f})"
+            )
+        return 0.0, "Limite diário ou maxTrade esgotado"
+
+    return cap, None
+
+
+def _auto_fit_order_size(
+    requested_usd: float,
+    current_price: float,
+    risk_cfg: dict,
+) -> tuple[float, int, Optional[str], Optional[str]]:
+    """
+    Auto-size order: min shares, maxTrade, reserve floor, daily cap.
+    Returns (size_usd, token_amount, resize_note, error).
+    """
+    import math
+
+    if current_price <= 0:
+        return requested_usd, 0, None, f"Invalid current price: {current_price}"
+
+    max_usd, cap_err = _max_order_usd(risk_cfg)
+    if cap_err:
+        return 0, 0, None, cap_err
+
+    min_usd = _min_usd_for_shares(current_price)
+    if max_usd < min_usd:
+        balance = _fetch_usdc_balance()
+        reserve = float(risk_cfg.get("reserveFloor", RESERVE_FLOOR_USD))
+        return 0, 0, None, (
+            f"Saldo insuficiente para mínimo {CLOB_MIN_SHARES} shares "
+            f"(${min_usd:.2f} @ ${current_price:.2f}) — disponível ${max_usd:.2f} "
+            f"(saldo ${balance:.2f}, reserva ${reserve:.2f})"
+        )
+
+    fitted = min(float(requested_usd), max_usd)
+    if fitted < min_usd:
+        fitted = min_usd
+
+    token_amount = max(CLOB_MIN_SHARES, int(math.ceil(fitted / current_price)))
+    actual_usd = round(token_amount * current_price, 4)
+
+    if actual_usd > max_usd:
+        token_amount = CLOB_MIN_SHARES
+        actual_usd = round(token_amount * current_price, 4)
+        if actual_usd > max_usd:
+            return 0, 0, None, (
+                f"Ordem mínima ${actual_usd:.2f} ({CLOB_MIN_SHARES} shares) "
+                f"excede disponível ${max_usd:.2f}"
+            )
+
+    resize_note = None
+    if abs(actual_usd - float(requested_usd)) > 0.01:
+        resize_note = (
+            f"Tamanho ajustado ${float(requested_usd):.2f} → ${actual_usd:.2f} "
+            f"(reserva/maxTrade/mín {CLOB_MIN_SHARES} shares)"
+        )
+        logger.info(resize_note)
+
+    return actual_usd, token_amount, resize_note, None
+
+
+def _resolve_size_and_shares(
+    size_usd: float,
+    current_price: float,
+    effective_max: float,
+) -> tuple[float, int, Optional[str]]:
+    """Legacy wrapper — prefer _auto_fit_order_size with full risk_cfg."""
+    risk_cfg = _load_risk_config()
+    if risk_cfg.get("maxTrade") is None:
+        risk_cfg = {**risk_cfg, "maxTrade": effective_max}
+    actual, tokens, _, err = _auto_fit_order_size(size_usd, current_price, risk_cfg)
+    return actual, tokens, err
+
+
+def _arbitrage_execution_prices(best_bid: float, best_ask: float) -> tuple[float, float]:
+    """Cross-spread prices aligned with ArbitrageNinja UI (bid+0.001 / ask-0.001)."""
+    buy_price = _clamp_clob_price(best_bid + 0.001)
+    sell_price = _clamp_clob_price(best_ask - 0.001)
+    return buy_price, sell_price
 
 
 def validate_order(market_id: str, size_usd: float, max_price: float) -> tuple[bool, Optional[str]]:
@@ -259,27 +446,39 @@ def validate_order(market_id: str, size_usd: float, max_price: float) -> tuple[b
     else:
         if len(mid) < 5 or not mid.isdigit():
             return False, f"Market ID too short or invalid: {mid!r}"
+
+    # Optional valid-market cache (populated by CorrectionAgent)
+    valid_ids_path = PROJECT_ROOT / "data" / "valid_market_ids.json"
+    if valid_ids_path.exists():
+        try:
+            valid_data = json.loads(valid_ids_path.read_text())
+            valid_set = {str(v) for v in valid_data.get("ids", []) if v}
+            if valid_set and mid.isdigit() and mid not in valid_set:
+                return False, f"Market ID {mid} not in valid market cache"
+        except Exception:
+            pass
     
     # Check if executor is stopped due to failures
     if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
         return False, f"Executor stopped after {consecutive_failures} consecutive failures"
     
-    # Check max trade size
-    if size_usd > MAX_TRADE_USD:
-        return False, f"Order size ${size_usd} exceeds max ${MAX_TRADE_USD}"
+    # Check max trade size (env + dashboard config)
+    risk_cfg = _load_risk_config()
+    effective_max = _effective_max_trade_usd(risk_cfg)
+    if size_usd > effective_max:
+        return False, f"Order size ${size_usd} exceeds max ${effective_max}"
     
     # Check market allowlist
     if ALLOWED_MARKETS and market_id not in ALLOWED_MARKETS:
         return False, f"Market {market_id} not in allowlist"
     
     # Check price bounds
-    if max_price < 0.01 or max_price > 0.99:
-        return False, f"Price {max_price} out of bounds [0.01, 0.99]"
+    if max_price < CLOB_MIN_PRICE or max_price > CLOB_MAX_PRICE:
+        return False, f"Price {max_price} out of bounds [{CLOB_MIN_PRICE}, {CLOB_MAX_PRICE}]"
     
-    # 🛡️ Reserve Floor Protection (Brimo)
-    risk_cfg = _load_risk_config()
+    # Reserve floor + daily exposure (Brimo)
     reserve = float(risk_cfg.get("reserveFloor", RESERVE_FLOOR_USD))
-    max_daily = float(risk_cfg.get("maxDailyExposure", MAX_DAILY_EXPOSURE_USD))
+    max_daily = float(risk_cfg.get("maxDailyExposure", risk_cfg.get("maxDaily", MAX_DAILY_EXPOSURE_USD)))
     global daily_exposure_usd, daily_exposure_date
     today = datetime.utcnow().strftime("%Y-%m-%d")
     if daily_exposure_date != today:
@@ -287,6 +486,13 @@ def validate_order(market_id: str, size_usd: float, max_price: float) -> tuple[b
         daily_exposure_date = today
     if daily_exposure_usd + size_usd > max_daily:
         return False, f"Daily exposure ${daily_exposure_usd + size_usd:.2f} would exceed limit ${max_daily}"
+
+    balance = _fetch_usdc_balance()
+    if balance > 0 and (balance - size_usd) < reserve:
+        return False, (
+            f"Would breach reserve floor ${reserve:.2f} "
+            f"(balance ${balance:.2f}, order ${size_usd:.2f})"
+        )
     
     return True, None
 
@@ -294,10 +500,11 @@ def validate_order(market_id: str, size_usd: float, max_price: float) -> tuple[b
 @app.get("/health")
 async def health():
     """Health check endpoint."""
+    risk_cfg = _load_risk_config()
     return {
         "status": "ok",
         "dry_run": DRY_RUN,
-        "max_trade_usd": MAX_TRADE_USD,
+        "max_trade_usd": _effective_max_trade_usd(risk_cfg),
         "consecutive_failures": consecutive_failures
     }
 
@@ -364,29 +571,37 @@ async def place_order(
         
         order_payload = order.model_dump()
 
-        # Validate
-        valid, error = validate_order(market_id, size_usd, max_price)
-        if not valid:
-            log_trade("order_rejected", order_payload, False, error)
-            raise HTTPException(status_code=400, detail=error)
-        
-        # Get market data
+        # Get market data (needed for auto-sizing before validation)
         market = await gamma_client.get_market(market_id)
         token_id = market.yes_token_id if outcome_id.upper() == "YES" else market.no_token_id
-        
+
         if not token_id:
             error = f"No token ID for outcome {outcome_id}"
             log_trade("order_rejected", order_payload, False, error)
             raise HTTPException(status_code=400, detail=error)
-        
-        # Calculate token amount from USD
+
         current_price = market.yes_price if outcome_id.upper() == "YES" else market.no_price
         if current_price is None or current_price <= 0:
             error = f"Invalid current price for {outcome_id}: {current_price}"
             log_trade("order_rejected", order_payload, False, error)
             raise HTTPException(status_code=400, detail=error)
 
-        token_amount = size_usd / current_price
+        risk_cfg = _load_risk_config()
+        size_usd, token_amount, resize_note, size_err = _auto_fit_order_size(
+            size_usd, current_price, risk_cfg
+        )
+        if size_err:
+            log_trade("order_rejected", order_payload, False, size_err)
+            raise HTTPException(status_code=400, detail=size_err)
+        if resize_note:
+            order_payload["sizeUsd"] = size_usd
+            order_payload["resizeNote"] = resize_note
+
+        # Validate with fitted size
+        valid, error = validate_order(market_id, size_usd, max_price)
+        if not valid:
+            log_trade("order_rejected", order_payload, False, error)
+            raise HTTPException(status_code=400, detail=error)
 
         # Check slippage
         slippage_base = max(max_price, 0.0001)
@@ -455,36 +670,73 @@ async def place_arbitrage(
         details = req.model_dump()
         market_id = req.marketId
         profit = float(req.profit)
-        size = float(req.sizeUsd)
+        risk_cfg = _load_risk_config()
+        effective_max = _effective_max_trade_usd(risk_cfg)
+        requested_size = min(float(req.sizeUsd), effective_max)
+
+        buy_price, sell_price = _arbitrage_execution_prices(float(req.bestBid), float(req.bestAsk))
+        if buy_price >= sell_price:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Spread inviável após normalização CLOB "
+                    f"(buy ${buy_price:.3f}, sell ${sell_price:.3f})"
+                ),
+            )
+
+        size, token_amount, resize_note, size_err = _auto_fit_order_size(
+            requested_size, buy_price, risk_cfg
+        )
+        if size_err:
+            raise HTTPException(status_code=400, detail=size_err)
+        if resize_note:
+            details["sizeUsd"] = size
+            details["resizeNote"] = resize_note
+            logger.info(f"Arbitrage {resize_note}")
+
+        valid, error = validate_order(market_id, size, buy_price)
+        if not valid:
+            raise HTTPException(status_code=400, detail=error)
         
         real_pnl = profit * size
+        execution_mode = "simulated" if DRY_RUN else "live"
 
-        # Armazenar ID real
-        live_order_id = None
+        live_order_id_buy = None
+        live_order_id_sell = None
         exec_error = None
 
         if not DRY_RUN:
-            logger.info("Executando arbitragem real via CLOB na blockchain...")
+            logger.info("Executando arbitragem real (two-legged) via CLOB...")
             try:
                 client = get_clob_client()
                 market = await gamma_client.get_market(market_id)
                 token_id = market.yes_token_id
-                
-                # Capturando Spread: Entramos comprando no Bid
-                target_token_amount = int(size / req.bestBid) if req.bestBid > 0 else 10
-                
-                logger.info(f"Postando GTC BUY Arbitragem: Token {token_id[:8]}... amount {target_token_amount} price {req.bestBid}")
-                order_id_buy, error_buy = client.buy_gtc(token_id, target_token_amount, req.bestBid)
-                
+                # size/token_amount already fitted above
+
+                logger.info(
+                    f"BUY GTC: token {token_id[:8]}... amount {token_amount} @ {buy_price}"
+                )
+                order_id_buy, error_buy = client.buy_gtc(token_id, token_amount, buy_price)
                 if error_buy:
-                    exec_error = error_buy
-                    raise Exception(f"Polymarket CLI Error: {error_buy}")
-                
-                live_order_id = order_id_buy
+                    raise Exception(f"Buy leg failed: {error_buy}")
+                live_order_id_buy = order_id_buy
+
+                logger.info(
+                    f"SELL GTC: token {token_id[:8]}... amount {token_amount} @ {sell_price}"
+                )
+                order_id_sell, error_sell = client.sell_gtc(token_id, token_amount, sell_price)
+                if error_sell:
+                    logger.warning(f"Sell leg failed, cancelling buy {order_id_buy}: {error_sell}")
+                    if order_id_buy:
+                        client.cancel_order(order_id_buy)
+                    raise Exception(f"Sell leg failed: {error_sell}")
+                live_order_id_sell = order_id_sell
             except Exception as e:
                 logger.error(f"Erro na execução da arbitragem real: {e}")
                 exec_error = str(e)
-                real_pnl = 0 # No profit if execution fails
+                real_pnl = 0
+        else:
+            execution_mode = "dry"
 
         evt = {
             "timestamp": datetime.utcnow().isoformat(),
@@ -495,13 +747,17 @@ async def place_arbitrage(
             "bestAsk": req.bestAsk,
             "spread": req.spread,
             "profit": profit,
-            "cumulative_pnl": real_pnl,  # Treated as real confirmed PnL
+            "cumulative_pnl": real_pnl,
             "size": size,
-            "agent": "arbitrage_ninja"
+            "agent": "arbitrage_ninja",
+            "execution_mode": execution_mode,
         }
-        
-        if live_order_id:
-            evt["live_order_id"] = live_order_id
+
+        if live_order_id_buy:
+            evt["live_order_id"] = live_order_id_buy
+            evt["live_order_id_buy"] = live_order_id_buy
+        if live_order_id_sell:
+            evt["live_order_id_sell"] = live_order_id_sell
         if exec_error:
             evt["exec_error"] = exec_error
 
@@ -519,12 +775,6 @@ async def place_arbitrage(
                 except:
                     pass
         evt["cumulative_pnl"] = round(cumulative, 4)
-
-        if not DRY_RUN:
-            # Here we would initialize actual CLOB maker orders on both sides of the spread:
-            # clob.create_order(side="buy", price=req.bestBid + 0.001)
-            # clob.create_order(side="sell", price=req.bestAsk - 0.001)
-            pass
 
         with open(ninja_file, "a") as f:
             f.write(json.dumps(evt) + "\n")
@@ -607,7 +857,7 @@ async def risk_status(_: bool = Depends(verify_token)):
 
 
 async def process_recommendations():
-    """Process recommendations from PolyWhale."""
+    """Process recommendations from PolyWhale (only accepted or autoExecute+filters)."""
     rec_file = PROJECT_ROOT / "data" / "recommendations.jsonl"
     if not rec_file.exists():
         return
@@ -617,6 +867,10 @@ async def process_recommendations():
     if processed_file.exists():
         processed = set(processed_file.read_text().splitlines())
     
+    status_map = _load_status_map()
+    risk_cfg = _load_risk_config()
+    effective_max = _effective_max_trade_usd(risk_cfg)
+    
     new_orders = []
     with open(rec_file, "r") as f:
         for line in f:
@@ -624,14 +878,21 @@ async def process_recommendations():
                 continue
             try:
                 rec = json.loads(line)
-                rec_id = rec.get("id") or rec.get("market_id", "")
+                rec_id = _rec_id(rec)
                 if rec_id and rec_id not in processed:
+                    should_run, reason = _should_execute_rec(rec, status_map, risk_cfg)
+                    if not should_run:
+                        logger.info(f"Skipping recommendation {rec_id}: {reason}")
+                        continue
+
                     # Convert PolyWhale recommendation to order
                     if rec.get("decision") in ["BUY_YES", "BUY_NO"]:
                         raw_size = rec.get("sizeUsd")
                         if raw_size is None:
                             raw_size = float(rec.get("risk_pct", 0.05)) * DEFAULT_BALANCE_USD
-                        size_usd = min(float(raw_size), MAX_TRADE_USD)
+                        size_usd = min(float(raw_size), effective_max)
+                        raw_max = float(rec.get("targetPrice", 0.5) or 0.5)
+                        max_price = _clamp_clob_price(raw_max)
 
                         order = {
                             "marketId": rec.get("market_id"),
@@ -639,7 +900,7 @@ async def process_recommendations():
                             "outcomeId": "YES" if "YES" in rec.get("decision", "") else "NO",
                             "side": "buy",
                             "sizeUsd": size_usd,
-                            "maxPrice": rec.get("targetPrice", 0.5)
+                            "maxPrice": max_price
                         }
                         new_orders.append((rec_id, order))
             except Exception as e:
@@ -661,32 +922,46 @@ async def process_recommendations():
                 lookup_id = gamma_id if gamma_id else market_id
                 size_usd = float(order_data.get("sizeUsd", 0))
                 max_price = float(order_data.get("maxPrice", 0.5))
-                
-                # Validate
-                valid, error = validate_order(market_id, size_usd, max_price)
-                if not valid:
-                    logger.warning(f"Recommendation {rec_id} rejected: {error}")
-                    processed.add(rec_id)
-                    continue
-                
-                # Get market and execute (prefer numeric gamma ID)
+                risk_cfg = _load_risk_config()
+
                 market = await gamma_client.get_market(lookup_id)
                 outcome_id = order_data.get("outcomeId", "YES")
                 token_id = market.yes_token_id if outcome_id.upper() == "YES" else market.no_token_id
-                
+
+                if not token_id:
+                    logger.warning(f"Recommendation {rec_id} skipped: no token")
+                    processed.add(rec_id)
+                    continue
+
+                current_price = market.yes_price if outcome_id.upper() == "YES" else market.no_price
+                if not current_price or current_price <= 0:
+                    logger.warning(f"⚠️ Recommendation {rec_id} skipped: current_price is {current_price}")
+                    log_trade("recommendation_skipped", order_data, False, f"price is {current_price}")
+                    processed.add(rec_id)
+                    continue
+
+                size_usd, token_amount, resize_note, size_err = _auto_fit_order_size(
+                    size_usd, current_price, risk_cfg
+                )
+                if size_err:
+                    logger.warning(f"Recommendation {rec_id} rejected: {size_err}")
+                    log_trade("recommendation_failed", order_data, False, size_err)
+                    processed.add(rec_id)
+                    continue
+                if resize_note:
+                    order_data["sizeUsd"] = size_usd
+                    order_data["resizeNote"] = resize_note
+                    logger.info(f"Rec {rec_id}: {resize_note}")
+
+                valid, error = validate_order(market_id, size_usd, max_price)
+                if not valid:
+                    logger.warning(f"Recommendation {rec_id} rejected: {error}")
+                    log_trade("recommendation_failed", order_data, False, error)
+                    processed.add(rec_id)
+                    continue
+
                 if token_id:
                     client = get_clob_client()
-                    current_price = market.yes_price if outcome_id.upper() == "YES" else market.no_price
-                    
-                    if not current_price or current_price <= 0:
-                        logger.warning(f"⚠️ Recommendation {rec_id} skipped: current_price is {current_price} (zero/null)")
-                        log_trade("recommendation_skipped", order_data, False, f"price is {current_price}")
-                        processed.add(rec_id)
-                        continue
-                    
-                    import math
-                    token_amount = math.ceil(size_usd / current_price)  # ceil to ensure >= $1 min
-                    
                     order_id, exec_error = client.buy_gtc(token_id, token_amount, max_price)
                     if order_id:
                         logger.info(f"✅ Recommendation {rec_id} executed: order {order_id}")

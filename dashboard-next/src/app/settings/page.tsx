@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { HintTooltip } from '@/components/HintTooltip'
 
 interface Config {
   goal: number
@@ -52,11 +53,12 @@ export default function SettingsPage() {
           <p className="text-sm text-muted mt-1">Configure metas, limites e automação dos agentes</p>
         </div>
         <button onClick={handleSave} disabled={saving}
-          className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+          className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 ${
             saved ? 'bg-green-500/20 text-green-400 border border-green-500/30'
             : 'bg-accent/20 text-accent border border-accent/30 hover:bg-accent/30'
           }`}>
           {saving ? '💾 Salvando...' : saved ? '✓ Salvo!' : '💾 Salvar Configurações'}
+          <HintTooltip hint="Grava em dashboard-config.json e sincroniza dry run com openclaw.json." />
         </button>
       </div>
 
@@ -65,11 +67,11 @@ export default function SettingsPage() {
         <h3 className="text-sm font-semibold text-white mb-4">🎯 Meta Financeira</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <InputField label="Meta ($)" type="number" value={config.goal}
-            onChange={v => update('goal', parseFloat(v))} hint="Objetivo de capital" />
+            onChange={v => update('goal', parseFloat(v))} hint="Objetivo de capital total (cash + posições). Usado no gráfico de projeção." />
           <InputField label="Prazo (dias)" type="number" value={config.goalDays}
-            onChange={v => update('goalDays', parseInt(v))} hint="Dias para atingir a meta" />
+            onChange={v => update('goalDays', parseInt(v))} hint="Horizonte para calcular meta diária necessária." />
           <InputField label="Capital Inicial ($)" type="number" value={config.capitalInitial}
-            onChange={v => update('capitalInitial', parseFloat(v))} hint="Quanto você começou" />
+            onChange={v => update('capitalInitial', parseFloat(v))} hint="Quanto você depositou no início. Base do cálculo de PnL." />
         </div>
         <div className="mt-3 p-3 rounded-lg bg-accent/5 border border-accent/20">
           <div className="text-xs text-muted">
@@ -85,11 +87,11 @@ export default function SettingsPage() {
         <h3 className="text-sm font-semibold text-white mb-4">💰 Limites de Investimento</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <InputField label="Mínimo por Trade ($)" type="number" value={config.minTrade}
-            onChange={v => update('minTrade', parseFloat(v))} hint="Valor mínimo por operação" step="0.1" />
+            onChange={v => update('minTrade', parseFloat(v))} hint="Limites que o Executor respeita ao processar recomendações aceitas." step="0.1" />
           <InputField label="Máximo por Trade ($)" type="number" value={config.maxTrade}
-            onChange={v => update('maxTrade', parseFloat(v))} hint="Valor máximo por operação" step="0.5" />
+            onChange={v => update('maxTrade', parseFloat(v))} hint="Valor máximo por operação no CLOB." step="0.5" />
           <InputField label="Máximo Diário ($)" type="number" value={config.maxDaily}
-            onChange={v => update('maxDaily', parseFloat(v))} hint="Limite diário total" />
+            onChange={v => update('maxDaily', parseFloat(v))} hint="Teto de exposição por dia — proteção contra overtrading." />
         </div>
       </div>
 
@@ -97,9 +99,9 @@ export default function SettingsPage() {
       <div className="glass-card p-5">
         <h3 className="text-sm font-semibold text-white mb-4">⚡ Modo de Execução</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ToggleField label="Dry Run Mode" description="Simular trades sem gastar USDC"
+          <ToggleField label="Modo simulação (Dry Run)" description="Simula ordens sem gastar USDC — sincroniza com DRY_RUN do executor"
             value={config.dryRun} onChange={v => update('dryRun', v)} />
-          <ToggleField label="Auto Execute" description="Executar recomendações automaticamente"
+          <ToggleField label="Execução automática" description="Executa recs com confiança e edge mínimos sem aprovação manual"
             value={config.autoExecute} onChange={v => update('autoExecute', v)}
             dangerWhenOn />
         </div>
@@ -120,9 +122,9 @@ export default function SettingsPage() {
           <SelectField label="Confiança Mínima" value={config.minConfidence}
             options={['LOW', 'MEDIUM', 'HIGH']}
             onChange={v => update('minConfidence', v)}
-            hint="Só executar recomendações com confiança ≥ este nível" />
+            hint="Filtro do PolyWhale: LOW / MEDIUM / HIGH. Só entra se confiança ≥ este nível." />
           <InputField label="Edge Mínimo (%)" type="number" value={config.minEdge}
-            onChange={v => update('minEdge', parseFloat(v))} hint="Edge mínimo para execução" step="1" />
+            onChange={v => update('minEdge', parseFloat(v))} hint="Diferença mínima entre fair value e preço de mercado. Polybot pode calibrar via /bots." step="1" />
         </div>
       </div>
 

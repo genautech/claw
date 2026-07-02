@@ -1,92 +1,95 @@
 #!/usr/bin/env python3
-"""PolyWhale Agent - Market analysis and recommendation engine."""
+"""PolyWhale Agent — real market analysis (heuristic + optional LLM)."""
 
+import argparse
 import json
-import random
 import ssl
 import sys
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from lib.polywhale_analysis import (  # noqa: E402
+    analyze_market,
+    effective_min_edge_pct,
+    llm_refine_recommendation,
+    load_config,
+)
 
 SSL_CTX = ssl.create_default_context()
 SSL_CTX.check_hostname = False
 SSL_CTX.verify_mode = ssl.CERT_NONE
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = SCRIPT_DIR.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
-STRATEGIES = ["arbitrage", "mispricing", "carry", "weather", "whale_tracking"]
 
-def fetch_markets(limit=20):
-    url = f"https://gamma-api.polymarket.com/markets?active=true&limit={limit}&order=volume24hr&ascending=false"
+def fetch_markets(limit: int = 25) -> list:
+    url = (
+        "https://gamma-api.polymarket.com/markets"
+        f"?active=true&limit={limit}&order=volume24hr&ascending=false"
+    )
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "PolyWhale/1.0"})
-        with urllib.request.urlopen(req, timeout=10, context=SSL_CTX) as resp:
+        req = urllib.request.Request(url, headers={"User-Agent": "PolyWhale/2.0"})
+        with urllib.request.urlopen(req, timeout=12, context=SSL_CTX) as resp:
             return json.loads(resp.read().decode())
-    except Exception as e:
-        print(f"PolyWhale: API error - {e}", file=sys.stderr)
+    except Exception as exc:
+        print(f"PolyWhale: API error - {exc}", file=sys.stderr)
         return []
 
-def analyze_market(market):
-    prices = market.get("outcomePrices", "[]")
-    if isinstance(prices, str):
-        prices = json.loads(prices)
-    if not prices:
-        return None
 
-    yes_price = float(prices[0])
-    if yes_price <= 0 or yes_price >= 1:
-        return None
+def main() -> None:
+    parser = argparse.ArgumentParser(description="PolyWhale market analyzer")
+    parser.add_argument("--limit", type=int, default=25, help="Markets to fetch from Gamma")
+    parser.add_argument("--max-recs", type=int, default=5, help="Max recommendations per cycle")
+    parser.add_argument("--llm", action="store_true", help="Refine top candidates with Claude")
+    args = parser.parse_args()
 
-    strategy = random.choice(STRATEGIES)
-    edge = random.uniform(0.03, 0.18)
-
-    if edge < 0.05:
-        return None
-
-    confidence = "HIGH" if edge > 0.12 else "MEDIUM" if edge > 0.08 else "LOW"
-    decision = random.choice(["BUY_YES", "BUY_NO", "PASS"])
-
-    target = yes_price + (edge if "YES" in decision else -edge)
-    target = max(0.01, min(0.99, target))
-
-    return {
-        "id": f"rec_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{random.randint(100,999)}",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "market_id": str(market.get("conditionId", market.get("id", "unknown"))),
-        "gamma_market_id": str(market.get("id", "")),
-        "description": market.get("question", "Unknown")[:100],
-        "decision": decision,
-        "targetPrice": round(target, 4),
-        "edge": round(edge, 4),
-        "confidence": confidence,
-        "risk_pct": round(min(edge * 0.4, 0.05), 4),
-        "reason": f"{strategy}: {market.get('question', '')[:60]}",
-        "strategy": strategy,
-        "data_sources": ["gamma_api", "kalshi"] if strategy == "arbitrage" else ["gamma_api"],
-    }
-
-def main():
-    markets = fetch_markets()
+    config = load_config()
+    min_edge = effective_min_edge_pct(config)
+    markets = fetch_markets(args.limit)
     if not markets:
         print("PolyWhale: No markets available")
         return
 
-    recs = []
-    for m in markets[:10]:
-        rec = analyze_market(m)
+    candidates: list[tuple[dict, dict]] = []
+    for market in markets:
+        rec = analyze_market(market, config)
         if rec:
-            recs.append(rec)
+            candidates.append((rec, market))
 
-    if recs:
-        outfile = DATA_DIR / "recommendations.jsonl"
-        with open(outfile, "a") as f:
-            for r in recs:
-                f.write(json.dumps(r) + "\n")
-        print(f"PolyWhale: {len(recs)} recommendations generated")
-    else:
-        print("PolyWhale: No actionable recommendations this cycle")
+    candidates.sort(key=lambda item: float(item[0].get("edge", 0)), reverse=True)
+    candidates = candidates[: args.max_recs]
+
+    recs: list[dict] = []
+    for rec, market in candidates:
+        if args.llm:
+            refined = llm_refine_recommendation(rec, market)
+            if not refined:
+                continue
+            rec = refined
+        recs.append(rec)
+
+    if not recs:
+        print(
+            f"PolyWhale: No actionable recommendations "
+            f"(minEdge={min_edge:.0f}%, scanned={len(markets)})"
+        )
+        return
+
+    outfile = DATA_DIR / "recommendations.jsonl"
+    with outfile.open("a") as handle:
+        for row in recs:
+            handle.write(json.dumps(row) + "\n")
+
+    methods = {r.get("analysis_method", "heuristic") for r in recs}
+    print(
+        f"PolyWhale: {len(recs)} recommendations "
+        f"(minEdge={min_edge:.0f}%, methods={','.join(sorted(methods))})"
+    )
+
 
 if __name__ == "__main__":
     main()

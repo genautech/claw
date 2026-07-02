@@ -1,0 +1,20 @@
+{
+  "ArbitrageNinja": {
+    "agent": "ArbitrageNinja",
+    "pid": 4707,
+    "startedAt": "2026-07-02T02:51:11.347Z",
+    "command": "python3 scripts/agent_ninja_arbitrage.py"
+  },
+  "Brimo": {
+    "agent": "Brimo",
+    "pid": 24061,
+    "startedAt": "2026-07-02T03:03:01.947Z",
+    "command": "python3 scripts/brimo.py"
+  },
+  "Executor": {
+    "agent": "Executor",
+    "pid": 53813,
+    "startedAt": "2026-07-02T03:23:22.223Z",
+    "command": "bash scripts/start-executor.sh"
+  }
+}

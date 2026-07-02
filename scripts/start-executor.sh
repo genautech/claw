@@ -8,6 +8,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PORT=8789
+LOG_FILE="/tmp/executor.log"
+PID_FILE="/tmp/clawd-executor.pid"
+FOREGROUND=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --foreground|-f) FOREGROUND=true ;;
+  esac
+done
 
 # Check if already running
 if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
@@ -70,4 +79,20 @@ echo "   Health: http://127.0.0.1:$PORT/health"
 echo ""
 
 cd "$PROJECT_DIR"
-python3 scripts/polymarket-exec.py --serve --port $PORT --token "$EXEC_API_TOKEN"
+
+if [[ "$FOREGROUND" == true ]]; then
+  exec python3 scripts/polymarket-exec.py --serve --port "$PORT" --token "$EXEC_API_TOKEN"
+fi
+
+nohup python3 scripts/polymarket-exec.py --serve --port "$PORT" --token "$EXEC_API_TOKEN" >> "$LOG_FILE" 2>&1 &
+echo $! > "$PID_FILE"
+sleep 2
+
+if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
+  echo "✓ Executor iniciado em background (PID $(cat "$PID_FILE"))"
+  echo "   Log: $LOG_FILE"
+else
+  echo "✗ Falha ao iniciar executor. Últimas linhas do log:"
+  tail -10 "$LOG_FILE" 2>/dev/null || true
+  exit 1
+fi

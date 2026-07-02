@@ -1,0 +1,13 @@
+{"timestamp":"2026-07-02T01:45:21.388Z","status":"pending","errorName":"Balance/Allowance","action":"Verificar saldo USDC sugerindo proxy check e aprove onchain"}
+{"timestamp":"2026-07-02T01:45:25.133Z","status":"pending","errorName":"Division by Zero","action":"Adicionar guards para valores zero em cálculos de edge/price"}
+{"timestamp":"2026-07-02T01:45:27.602Z","status":"pending","errorName":"Invalid Market ID","action":"Implementar cache de market IDs válidos e validação upfront"}
+{"timestamp":"2026-07-02T01:45:29.866Z","status":"pending","errorName":"Other","action":"Investigar e corrigir log stack trace na base do projeto"}
+{"timestamp":"2026-07-02T02:05:06.136Z","status":"pending","errorName":"Balance/Allowance","action":"Verificar saldo USDC sugerindo proxy check e aprove onchain"}
+{"timestamp":"2026-07-02T02:05:09.500Z","status":"pending","errorName":"Division by Zero","action":"Adicionar guards para valores zero em cálculos de edge/price"}
+{"timestamp":"2026-07-02T02:05:12.600Z","status":"pending","errorName":"Invalid Market ID","action":"Implementar cache de market IDs válidos e validação upfront"}
+{"timestamp":"2026-07-02T02:05:13.646Z","status":"pending","errorName":"Other","action":"Investigar e corrigir log stack trace na base do projeto"}
+{"timestamp":"2026-07-02T02:13:07.798Z","status":"pending","errorName":"Balance/Allowance","action":"Verificar saldo USDC sugerindo proxy check e aprove onchain"}
+{"timestamp":"2026-07-02T02:13:17.327Z","status":"pending","errorName":"Division by Zero","action":"Adicionar guards para valores zero em cálculos de edge/price"}
+{"timestamp":"2026-07-02T02:59:43.646Z","status":"pending","errorName":"Balance/Allowance","action":"Verificar saldo USDC sugerindo proxy check e aprove onchain"}
+{"timestamp":"2026-07-02T02:59:54.895Z","status":"pending","errorName":"Size Too Small","action":"Set minTrade = 5.0 in dashboard-config.json","legacyId":"corr_1782971602_size_too_small"}
+{"timestamp":"2026-07-02T02:59:57.053Z","status":"pending","errorName":"Balance/Allowance","action":"Enable reserveFloor safety check dynamically","legacyId":"corr_1782968877_balanceallowance"}

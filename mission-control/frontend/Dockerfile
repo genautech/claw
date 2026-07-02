@@ -17,6 +17,8 @@ ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ARG NEXT_PUBLIC_AUTH_MODE
 ENV NEXT_PUBLIC_AUTH_MODE=${NEXT_PUBLIC_AUTH_MODE}
+ARG NEXT_PUBLIC_LOCAL_AUTH_TOKEN
+ENV NEXT_PUBLIC_LOCAL_AUTH_TOKEN=${NEXT_PUBLIC_LOCAL_AUTH_TOKEN}
 
 RUN npm run build
 
@@ -25,11 +27,13 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ARG NEXT_PUBLIC_AUTH_MODE
+ARG NEXT_PUBLIC_LOCAL_AUTH_TOKEN
 
 # If provided at runtime, Next will expose NEXT_PUBLIC_* to the browser as well
 # (but note some values may be baked at build time).
 ENV NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_AUTH_MODE=${NEXT_PUBLIC_AUTH_MODE}
+ENV NEXT_PUBLIC_LOCAL_AUTH_TOKEN=${NEXT_PUBLIC_LOCAL_AUTH_TOKEN}
 
 COPY --from=builder /app/.next ./.next
 # `public/` is optional in Next.js apps; repo may not have it.
