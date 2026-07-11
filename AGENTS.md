@@ -214,3 +214,20 @@ The goal: Be helpful without being annoying. Check in a few times a day, do usef
 ## Make It Yours
 
 This is a starting point. Add your own conventions, style, and rules as you figure out what works.
+
+## Cursor Cloud specific instructions
+
+The repo-native product here is the **Polymarket trading bot**. Three services make it up; the update script already installs all dependencies (`requirements.txt`, `requirements-exec.txt` + `plotly`, and `dashboard-next` npm deps), so you only need to start the services.
+
+Services and how to run them (start each in its own tmux session; they keep running for follow-up work):
+- **PolyAgents Streamlit dashboard** (primary UI, port 8888) — `python3 -m streamlit run app.py --server.port 8888 --server.address 0.0.0.0 --server.headless true`. Reads the JSONL files in `data/` (already populated). `app.py` also imports `plotly` (added to `requirements.txt`).
+- **Polymarket Executor** (FastAPI, port 8789) — `DRY_RUN=true EXEC_API_TOKEN=dev-token python3 scripts/polymarket-exec.py --serve --port 8789`. `GET /health` needs no auth; other routes need `Authorization: Bearer <EXEC_API_TOKEN>`. Always keep `DRY_RUN=true` unless you intend real on-chain trades (which require `POLYMARKET_PK`/`POLYMARKET_ADDRESS`).
+- **PolyClaw Next.js dashboard** (modern UI, port 3333) — `cd dashboard-next && npm run dev`. Reads `../data/*.jsonl` and proxies the executor at `127.0.0.1:8789`.
+
+Non-obvious gotchas:
+- Python deps are installed system-wide with `pip --break-system-packages`. The console scripts (`streamlit`, `uvicorn`, `fastapi`, `pytest`) land in `~/.local/bin`, which is NOT on `PATH`. Invoke via `python3 -m streamlit ...` and `python3 scripts/...` rather than the bare command.
+- `scripts/setup.sh`, `scripts/start.sh`, and `scripts/start-executor.sh` depend on the external `openclaw` CLI (installed via `openclaw.ai/install.sh`) which is NOT present in the cloud VM — `setup.sh` hard-exits if `openclaw` is missing. Don't run them; start the services directly with the commands above.
+- The executor logs gracefully degrade without Redis (`Could not connect to Redis ... Running without cache.`) — Redis is optional. There's no Redis running by default.
+- The executor's `/order` (and `/arbitrage`) endpoints call the live `gamma-api.polymarket.com` even in `DRY_RUN`, so a dry-run order needs internet plus a real 0x condition ID (66 chars). `/health` and `/risk/status` work fully offline.
+- The Streamlit dashboard's red "execução(ões) com erro" banner reflects historical errors in the committed `data/executions.jsonl` — it's a working risk-indicator, not a setup failure.
+- Out of scope for the trading bot: `mission-control/`, `mc-docker/`, `openclaw-mission-control-master/` (three copies of a vendored third-party FastAPI+Next.js+Postgres+Redis Docker stack) and `firebase/` (cloud-deploy variant). They aren't needed to run or test the trading bot.
